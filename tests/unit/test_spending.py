@@ -4,7 +4,15 @@ from decimal import Decimal
 import pytest
 
 from app.banking.models import Transaction
-from app.spending import DailySpending, Period, daily_spending, main_currency
+from app.spending import (
+    DailySpending,
+    Period,
+    Share,
+    daily_spending,
+    main_currency,
+    spending_by,
+    top_shares,
+)
 
 TODAY = date(2026, 11, 15)
 
@@ -116,3 +124,43 @@ def test_only_sums_transactions_in_the_requested_currency() -> None:
     ]
 
     assert daily_spending(transactions, "PLN", Period.LAST_WEEK, TODAY)[-1].amount == Decimal("50")
+
+
+def test_spending_by_groups_the_period_spending_biggest_first() -> None:
+    transactions = [
+        _transaction("4", booking_date=TODAY),
+        _transaction("3", booking_date=TODAY),
+        _transaction("30", booking_date=TODAY),
+        _transaction("20", status="RJCT", booking_date=TODAY),
+        _transaction("12", currency="PLN", booking_date=TODAY),
+        _transaction("40", booking_date=date(2026, 10, 1)),
+    ]
+
+    shares = spending_by(
+        transactions,
+        "EUR",
+        Period.LAST_WEEK,
+        TODAY,
+        key=lambda transaction: "big" if transaction.transaction_amount.amount > 5 else "small",
+    )
+
+    assert shares == [Share("big", Decimal("30")), Share("small", Decimal("7"))]
+
+
+@pytest.mark.parametrize(
+    ("amounts", "limit", "kept", "rest"),
+    [
+        ([5, 4, 3], 3, [5, 4, 3], 0),
+        ([5, 4, 3, 2, 1], 3, [5, 4], 6),
+        ([], 3, [], 0),
+    ],
+)
+def test_top_shares_folds_what_does_not_fit_into_one_rest_total(
+    amounts: list[int], limit: int, kept: list[int], rest: int
+) -> None:
+    shares = [Share(index, Decimal(amount)) for index, amount in enumerate(amounts)]
+
+    top, other = top_shares(shares, limit)
+
+    assert [share.amount for share in top] == kept
+    assert other == rest

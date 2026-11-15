@@ -1,8 +1,10 @@
 from collections import defaultdict
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 from enum import StrEnum
+from typing import Generic, TypeVar
 
 from app.banking.models import Transaction
 
@@ -26,6 +28,8 @@ class Period(StrEnum):
         except ValueError:
             return cls.LAST_MONTH
 
+
+Key = TypeVar("Key")
 
 _PERIOD_DAYS = {Period.LAST_WEEK: 7, Period.LAST_MONTH: 30}
 _PERIOD_LABELS = {Period.LAST_WEEK: "Last week", Period.LAST_MONTH: "Last month"}
@@ -53,18 +57,55 @@ def main_currency(transactions: list[Transaction]) -> str | None:
     return max(totals, key=totals.__getitem__, default=None)
 
 
-def daily_spending(
+@dataclass(frozen=True)
+class Share(Generic[Key]):
+    key: Key
+    amount: Decimal
+
+
+def _spending_in_period(
     transactions: list[Transaction], currency: str, period: Period, today: date
-) -> list[DailySpending]:
+) -> Iterator[tuple[Transaction, date, Decimal]]:
     first_day = today - timedelta(days=period.days - 1)
-    totals: dict[date, Decimal] = defaultdict(Decimal)
     for transaction in filter(_is_spending, transactions):
         spent_on = transaction.spent_on
         amount = transaction.transaction_amount
         if spent_on and first_day <= spent_on <= today and amount.currency == currency:
             # Banks differ on whether debit amounts are signed; the indicator carries the direction.
-            totals[spent_on] += abs(amount.amount)
+            yield transaction, spent_on, abs(amount.amount)
+
+
+def daily_spending(
+    transactions: list[Transaction], currency: str, period: Period, today: date
+) -> list[DailySpending]:
+    first_day = today - timedelta(days=period.days - 1)
+    totals: dict[date, Decimal] = defaultdict(Decimal)
+    for _, spent_on, amount in _spending_in_period(transactions, currency, period, today):
+        totals[spent_on] += amount
     return [
         DailySpending(day=day, amount=totals[day])
         for day in (first_day + timedelta(days=offset) for offset in range(period.days))
     ]
+
+
+def spending_by(
+    transactions: list[Transaction],
+    currency: str,
+    period: Period,
+    today: date,
+    key: Callable[[Transaction], Key],
+) -> list[Share[Key]]:
+    """Spending per key, biggest first."""
+    totals: dict[Key, Decimal] = defaultdict(Decimal)
+    for transaction, _, amount in _spending_in_period(transactions, currency, period, today):
+        totals[key(transaction)] += amount
+    shares = [Share(key=group, amount=amount) for group, amount in totals.items()]
+    return sorted(shares, key=lambda share: share.amount, reverse=True)
+
+
+def top_shares(shares: list[Share[Key]], limit: int) -> tuple[list[Share[Key]], Decimal]:
+    """At most `limit` slices: the biggest shares, plus the total of the rest when not all fit."""
+    if len(shares) <= limit:
+        return shares, Decimal(0)
+    kept = shares[: limit - 1]
+    return kept, sum((share.amount for share in shares[limit - 1 :]), Decimal(0))
