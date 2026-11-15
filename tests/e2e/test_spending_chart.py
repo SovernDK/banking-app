@@ -5,21 +5,18 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from tests.e2e.pages.dashboard_page import DashboardPage
+from tests.fakes.enable_banking import debit
 
 pytestmark = pytest.mark.e2e
 
 
-def _debit(amount: str, days_ago: int) -> dict[str, object]:
-    return {
-        "transaction_amount": {"amount": amount, "currency": "EUR"},
-        "credit_debit_indicator": "DBIT",
-        "booking_date": (date.today() - timedelta(days=days_ago)).isoformat(),
-    }
+def _days_ago(days: int) -> date:
+    return date.today() - timedelta(days=days)
 
 
 @pytest.fixture
 def connected_dashboard(page: Page, fake_bank: Callable[..., None]) -> DashboardPage:
-    fake_bank(transactions=[_debit("10", days_ago=0), _debit("100", days_ago=20)])
+    fake_bank(transactions=[debit("10", _days_ago(0)), debit("100", _days_ago(20))])
     dashboard = DashboardPage(page)
     dashboard.open()
     dashboard.connect_bank()
@@ -45,7 +42,7 @@ def test_period_is_restored_from_url(connected_dashboard: DashboardPage) -> None
 def test_period_without_spending_shows_empty_state(
     page: Page, fake_bank: Callable[..., None]
 ) -> None:
-    fake_bank(transactions=[_debit("100", days_ago=20)])
+    fake_bank(transactions=[debit("100", _days_ago(20))])
     dashboard = DashboardPage(page)
     dashboard.open()
 

@@ -4,6 +4,8 @@ from typing import Any, TypeVar
 
 import httpx2
 import jwt
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from pydantic import BaseModel, ValidationError
 
 from app.banking.models import AuthResponse, SessionResponse, Transaction, TransactionsPage
@@ -21,11 +23,24 @@ class BankSessionExpiredError(BankApiError):
     pass
 
 
+def _error_code(response: httpx2.Response) -> str:
+    """Enable Banking error code, e.g. EXPIRED_SESSION; empty when the body has none."""
+    try:
+        body = response.json()
+    except ValueError:
+        return ""
+    code = body.get("error") if isinstance(body, dict) else None
+    return code if isinstance(code, str) else ""
+
+
 class EnableBankingClient:
     def __init__(self, http: httpx2.Client, app_id: str, key_path: Path) -> None:
         self._http = http
         self._app_id = app_id
-        self._private_key = key_path.read_text()
+        private_key = load_pem_private_key(key_path.read_bytes(), password=None)
+        if not isinstance(private_key, RSAPrivateKey):
+            raise ValueError(f"Enable Banking key must be an RSA private key: {key_path}")
+        self._private_key = private_key
 
     def start_authorization(
         self,
@@ -80,7 +95,7 @@ class EnableBankingClient:
             response = self._http.request(method, path, headers=headers, **kwargs)
         except httpx2.HTTPError as error:
             raise BankApiError("The bank service could not be reached.") from error
-        if response.status_code in {401, 403} and path.startswith("/accounts/"):
+        if response.is_error and "SESSION" in _error_code(response):
             raise BankSessionExpiredError("The bank connection has expired.")
         if response.is_error:
             raise BankApiError(f"The bank service returned an error ({response.status_code}).")

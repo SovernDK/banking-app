@@ -7,7 +7,7 @@ from nicegui import run, ui
 from app.banking.client import BankApiError, BankSessionExpiredError
 from app.banking.errors import BankErrorCode
 from app.banking.models import Transaction
-from app.banking.service import BankingService, find_banking_service
+from app.banking.service import BankingService, NotConnectedError, find_banking_service
 from app.config import get_settings
 from app.spending import DailySpending, Period, daily_spending, main_currency
 from app.ui import format as fmt
@@ -27,7 +27,7 @@ from app.ui.components import (
 
 def _error_from(code: str | None) -> BankErrorCode | None:
     try:
-        return BankErrorCode(code) if code else None
+        return BankErrorCode(code)
     except ValueError:
         return None
 
@@ -64,13 +64,14 @@ def _spending_view(
     transactions: list[Transaction], today: date, initial: Period, dark_mode: ui.dark_mode
 ) -> None:
     currency = main_currency(transactions)
+    if currency is None:
+        empty_state("No spending in the last month.")
+        return
+    spending = {period: daily_spending(transactions, currency, period, today) for period in Period}
 
     @ui.refreshable
     def content(period: Period) -> None:
-        if currency is None:
-            empty_state("No spending in the last month.")
-            return
-        days = daily_spending(transactions, currency, period, today)
+        days = spending[period]
         total = sum((entry.amount for entry in days), Decimal(0))
         kpi_tile(f"Spent, {period.label.lower()}", fmt.money(total, currency), testid="total")
         with section("Spending per day", currency):
@@ -110,12 +111,12 @@ def register() -> None:
                 return
             if error:
                 alert(error.message)
-            if not service.is_connected():
+            try:
+                transactions = await run.io_bound(service.transactions)
+            except NotConnectedError:
                 empty_state("No transactions yet. Connect a bank account to see your history.")
                 _connect_button(service)
                 return
-            try:
-                transactions = await run.io_bound(service.transactions)
             except BankSessionExpiredError:
                 alert(BankErrorCode.SESSION_EXPIRED.message)
                 _connect_button(service)

@@ -9,6 +9,7 @@ from pathlib import Path
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.x509.oid import NameOID
 
 from app.config import PROJECT_ROOT, get_settings
@@ -16,8 +17,25 @@ from app.config import PROJECT_ROOT, get_settings
 CERTIFICATE_VALIDITY = timedelta(days=365)
 
 
+def generate_private_key() -> RSAPrivateKey:
+    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
+def write_private_key(key: RSAPrivateKey, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch(mode=0o600)
+    path.chmod(0o600)
+    path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+
+
 def write_localhost_certificate(certificate_path: Path, key_path: Path) -> None:
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    key = generate_private_key()
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")])
     now = datetime.now(UTC)
     certificate = (
@@ -37,17 +55,8 @@ def write_localhost_certificate(certificate_path: Path, key_path: Path) -> None:
         .sign(key, hashes.SHA256())
     )
     certificate_path.parent.mkdir(parents=True, exist_ok=True)
-    key_path.parent.mkdir(parents=True, exist_ok=True)
     certificate_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
-    key_path.touch(mode=0o600)
-    key_path.chmod(0o600)
-    key_path.write_bytes(
-        key.private_bytes(
-            serialization.Encoding.PEM,
-            serialization.PrivateFormat.PKCS8,
-            serialization.NoEncryption(),
-        )
-    )
+    write_private_key(key, key_path)
 
 
 if __name__ == "__main__":

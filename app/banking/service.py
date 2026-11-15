@@ -7,7 +7,8 @@ import httpx2
 
 from app.banking.client import BankSessionExpiredError, EnableBankingClient
 from app.banking.models import Transaction
-from app.banking.store import BankStore, StoredSession
+from app.banking.state import new_state, nonce_of
+from app.banking.store import STORE_FILENAME, BankStore, StoredSession, StoredState
 from app.config import MissingCredentialsError, Settings, get_settings
 from app.spending import LONGEST_PERIOD
 
@@ -40,46 +41,44 @@ class BankingService:
     def today(self) -> date:
         return self._now().date()
 
-    def is_connected(self) -> bool:
-        session = self._store.load().session
-        return session is not None and session.valid_until > self._now()
+    def _live_session(self, stored: StoredState) -> StoredSession:
+        session = stored.session
+        if session is None or session.valid_until <= self._now():
+            raise NotConnectedError
+        return session
 
     def connect_url(self) -> str:
-        nonce = secrets.token_urlsafe(24)
-        state = self._store.load()
-        state.pending_nonce = nonce
-        self._store.save(state)
-        # The hosted production callback page relays to 127.0.0.1:<port>, read from state.
+        state, nonce = new_state(self._settings.port)
+        stored = self._store.load()
+        stored.pending_nonce = nonce
+        self._store.save(stored)
         return self._client.start_authorization(
             aspsp_name=self._settings.enable_banking_aspsp_name,
             aspsp_country=self._settings.enable_banking_aspsp_country,
             redirect_url=str(self._settings.active_redirect_url),
-            state=f"{self._settings.port}.{nonce}",
+            state=state,
             valid_until=self._now() + timedelta(days=self._settings.enable_banking_consent_days),
         )
 
     def complete(self, code: str, state: str) -> None:
         stored = self._store.load()
-        nonce = state.partition(".")[2]
+        nonce = nonce_of(state)
         if not stored.pending_nonce or not secrets.compare_digest(nonce, stored.pending_nonce):
             raise InvalidStateError
         stored.pending_nonce = None
         self._store.save(stored)
         session = self._client.create_session(code)
-        stored.session = StoredSession(
-            session_id=session.session_id,
-            account_uids=[account.uid for account in session.accounts],
-            valid_until=session.access.valid_until,
+        stored.replace_session(
+            StoredSession(
+                account_uids=[account.uid for account in session.accounts],
+                valid_until=session.access.valid_until,
+            )
         )
-        stored.transactions = []
-        stored.fetched_at = None
         self._store.save(stored)
 
     def transactions(self) -> list[Transaction]:
-        if not self.is_connected():
-            raise NotConnectedError
         stored = self._store.load()
-        assert stored.session is not None
+        session = self._live_session(stored)
         refresh_after = timedelta(minutes=self._settings.transactions_refresh_minutes)
         if stored.fetched_at and self._now() - stored.fetched_at < refresh_after:
             return stored.transactions
@@ -87,13 +86,11 @@ class BankingService:
         try:
             transactions = [
                 transaction
-                for account_uid in stored.session.account_uids
+                for account_uid in session.account_uids
                 for transaction in self._client.fetch_transactions(account_uid, date_from)
             ]
         except BankSessionExpiredError:
-            stored.session = None
-            stored.transactions = []
-            stored.fetched_at = None
+            stored.replace_session(None)
             self._store.save(stored)
             raise
         stored.transactions = transactions
@@ -112,7 +109,7 @@ def _build_banking_service() -> BankingService:
     )
     client = EnableBankingClient(http=http, app_id=app_id, key_path=key_path)
     return BankingService(
-        client=client, store=BankStore(settings.data_dir / "bank.json"), settings=settings
+        client=client, store=BankStore(settings.data_dir / STORE_FILENAME), settings=settings
     )
 
 

@@ -90,7 +90,7 @@ class Settings(BaseSettings):
 
     def check_local_callback(self) -> None:
         redirect = self.active_redirect_url
-        if self.local_callback_path() is None:
+        if redirect.host not in LOOPBACK_HOSTS:
             return
         if redirect.port != self.port:
             raise LocalCallbackError(

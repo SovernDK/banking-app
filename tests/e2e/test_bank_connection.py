@@ -5,20 +5,13 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from tests.e2e.pages.dashboard_page import DashboardPage
+from tests.fakes.enable_banking import debit
 
 pytestmark = pytest.mark.e2e
 
 
-def _debit(amount: str, booking_date: date) -> dict[str, object]:
-    return {
-        "transaction_amount": {"amount": amount, "currency": "EUR"},
-        "credit_debit_indicator": "DBIT",
-        "booking_date": booking_date.isoformat(),
-    }
-
-
 def test_connecting_bank_shows_spending_chart(page: Page, fake_bank: Callable[..., None]) -> None:
-    fake_bank(transactions=[_debit("12.50", date.today())])
+    fake_bank(transactions=[debit("12.50", date.today())])
     dashboard = DashboardPage(page)
     dashboard.open()
 

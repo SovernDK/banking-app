@@ -9,8 +9,9 @@ from typing import Any, Protocol
 
 import httpx2
 import pytest
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+
+from app.banking.store import STORE_FILENAME
+from app.tls import generate_private_key, write_private_key
 
 SERVER_START_TIMEOUT_SECONDS = 20
 HEALTH_POLL_INTERVAL_SECONDS = 0.1
@@ -57,16 +58,27 @@ class AppServer(Protocol):
     ) -> str: ...
 
 
-@pytest.fixture(scope="session")
-def serve_app() -> Iterator[AppServer]:
-    servers: list[subprocess.Popen[bytes]] = []
+def loopback_origin(port: int) -> str:
+    return f"http://127.0.0.1:{port}"
 
+
+@pytest.fixture(scope="session")
+def servers() -> Iterator[list[subprocess.Popen[bytes]]]:
+    started: list[subprocess.Popen[bytes]] = []
+    yield started
+    for server in started:
+        server.terminate()
+        server.wait()
+
+
+@pytest.fixture(scope="session")
+def serve_app(servers: list[subprocess.Popen[bytes]]) -> AppServer:
     def start(
         port: int, data_dir: Path, env: dict[str, str], tls: tuple[Path, Path] | None = None
     ) -> str:
         app_env = {"YIJI_PORT": str(port), "YIJI_DATA_DIR": str(data_dir), **env}
         if tls is None:
-            origin, tls_args = f"http://127.0.0.1:{port}", ()
+            origin, tls_args = loopback_origin(port), ()
         else:
             certificate, key = tls
             origin = f"https://localhost:{port}"
@@ -74,38 +86,21 @@ def serve_app() -> Iterator[AppServer]:
         servers.append(_serve("app.main:app", origin, "/api/health", app_env, *tls_args))
         return origin
 
-    yield start
-    for server in servers:
-        server.terminate()
-        server.wait()
+    return start
 
 
 @pytest.fixture(scope="session")
-def fake_bank_url() -> Iterator[str]:
-    port = free_port()
-    server = _serve(
-        "tests.fakes.enable_banking:create_fake_enable_banking",
-        f"http://127.0.0.1:{port}",
-        "/docs",
-        {},
-        "--factory",
-    )
-    yield f"http://127.0.0.1:{port}"
-    server.terminate()
-    server.wait()
+def fake_bank_url(servers: list[subprocess.Popen[bytes]]) -> str:
+    origin = loopback_origin(free_port())
+    fake_app = "tests.fakes.enable_banking:create_fake_enable_banking"
+    servers.append(_serve(fake_app, origin, "/docs", {}, "--factory"))
+    return origin
 
 
 @pytest.fixture(scope="session")
 def test_key_file(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     path = tmp_path_factory.mktemp("keys") / "key.pem"
-    path.write_bytes(
-        key.private_bytes(
-            serialization.Encoding.PEM,
-            serialization.PrivateFormat.PKCS8,
-            serialization.NoEncryption(),
-        )
-    )
+    write_private_key(generate_private_key(), path)
     return path
 
 
@@ -119,7 +114,7 @@ def base_url(
     serve_app: AppServer, fake_bank_url: str, test_key_file: Path, app_data_dir: Path
 ) -> str:
     port = free_port()
-    url = f"http://127.0.0.1:{port}"
+    url = loopback_origin(port)
     return serve_app(
         port,
         app_data_dir,
@@ -141,5 +136,5 @@ def fake_bank(fake_bank_url: str, app_data_dir: Path) -> Callable[..., None]:
         httpx2.post(f"{fake_bank_url}/_fake/configure", json=config).raise_for_status()
 
     configure()
-    (app_data_dir / "bank.json").unlink(missing_ok=True)
+    (app_data_dir / STORE_FILENAME).unlink(missing_ok=True)
     return configure

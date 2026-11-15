@@ -1,13 +1,12 @@
 from pathlib import Path
 
 import pytest
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.banking.client import EnableBankingClient
+from app.tls import generate_private_key, write_private_key
 from tests.fakes.enable_banking import FakeBankState, create_fake_enable_banking
 
 TEST_APP_ID = "test-app-id"
@@ -15,19 +14,13 @@ TEST_APP_ID = "test-app-id"
 
 @pytest.fixture(scope="session")
 def private_key() -> RSAPrivateKey:
-    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    return generate_private_key()
 
 
 @pytest.fixture
 def key_file(tmp_path: Path, private_key: RSAPrivateKey) -> Path:
     path = tmp_path / "key.pem"
-    path.write_bytes(
-        private_key.private_bytes(
-            serialization.Encoding.PEM,
-            serialization.PrivateFormat.PKCS8,
-            serialization.NoEncryption(),
-        )
-    )
+    write_private_key(private_key, path)
     return path
 
 

@@ -8,9 +8,10 @@ from app.banking.models import Transaction
 
 logger = logging.getLogger(__name__)
 
+STORE_FILENAME = "bank.json"
+
 
 class StoredSession(BaseModel):
-    session_id: str
     account_uids: list[str]
     valid_until: datetime
 
@@ -20,6 +21,11 @@ class StoredState(BaseModel):
     session: StoredSession | None = None
     transactions: list[Transaction] = []
     fetched_at: datetime | None = None
+
+    def replace_session(self, session: StoredSession | None) -> None:
+        self.session = session
+        self.transactions = []
+        self.fetched_at = None
 
 
 class BankStore:

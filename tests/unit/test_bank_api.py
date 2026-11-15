@@ -4,7 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.bank import create_router
+from app.api.bank import CALLBACK_PATH, create_router
 from app.banking.service import InvalidStateError, find_banking_service
 from app.main import app
 
@@ -39,7 +39,7 @@ def client() -> TestClient:
 def test_successful_callback_completes_connection_and_returns_to_dashboard(
     client: TestClient, recording_service: RecordingService
 ) -> None:
-    response = client.get("/api/bank/callback", params={"code": "abc", "state": STATE})
+    response = client.get(CALLBACK_PATH, params={"code": "abc", "state": STATE})
 
     assert response.status_code == 303
     assert response.headers["location"] == "/"
@@ -61,7 +61,7 @@ def test_failed_callback_redirects_with_safe_error_code(
     params: dict[str, str],
     expected_error: str,
 ) -> None:
-    response = client.get("/api/bank/callback", params=params)
+    response = client.get(CALLBACK_PATH, params=params)
 
     assert response.status_code == 303
     assert response.headers["location"] == f"/?bank_error={expected_error}"
@@ -73,7 +73,7 @@ def test_callback_with_unknown_state_is_rejected(
 ) -> None:
     recording_service.accept = False
 
-    response = client.get("/api/bank/callback", params={"code": "abc", "state": STATE})
+    response = client.get(CALLBACK_PATH, params={"code": "abc", "state": STATE})
 
     assert response.headers["location"] == "/?bank_error=invalid_state"
 
@@ -83,7 +83,7 @@ def test_callback_without_configured_credentials_reports_not_configured(
 ) -> None:
     app.dependency_overrides[find_banking_service] = lambda: None
     try:
-        response = client.get("/api/bank/callback", params={"code": "abc", "state": STATE})
+        response = client.get(CALLBACK_PATH, params={"code": "abc", "state": STATE})
     finally:
         app.dependency_overrides.clear()
 

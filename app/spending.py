@@ -13,11 +13,11 @@ class Period(StrEnum):
 
     @property
     def days(self) -> int:
-        return 7 if self is Period.LAST_WEEK else 30
+        return _PERIOD_DAYS[self]
 
     @property
     def label(self) -> str:
-        return "Last week" if self is Period.LAST_WEEK else "Last month"
+        return _PERIOD_LABELS[self]
 
     @classmethod
     def parse(cls, value: str | None) -> "Period":
@@ -27,6 +27,8 @@ class Period(StrEnum):
             return cls.LAST_MONTH
 
 
+_PERIOD_DAYS = {Period.LAST_WEEK: 7, Period.LAST_MONTH: 30}
+_PERIOD_LABELS = {Period.LAST_WEEK: "Last week", Period.LAST_MONTH: "Last month"}
 LONGEST_PERIOD = max(Period, key=lambda period: period.days)
 
 

@@ -9,12 +9,10 @@ TransactionStatus = Literal["BOOK", "CNCL", "HOLD", "OTHR", "PDNG", "RJCT", "SCH
 
 class AuthResponse(BaseModel):
     url: HttpUrl
-    authorization_id: str
 
 
 class Account(BaseModel):
     uid: str = Field(min_length=1)
-    currency: str | None = None
 
 
 class SessionAccess(BaseModel):
@@ -22,7 +20,6 @@ class SessionAccess(BaseModel):
 
 
 class SessionResponse(BaseModel):
-    session_id: str = Field(min_length=1)
     accounts: list[Account]
     access: SessionAccess
 

@@ -2,17 +2,19 @@ from typing import Annotated, Self
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.banking.client import BankApiError
 from app.banking.errors import BankErrorCode
 from app.banking.service import BankingService, InvalidStateError, find_banking_service
+from app.banking.state import STATE_PATTERN
+
+# Also hard-coded in site/callback.html, the hosted page that relays to it.
+CALLBACK_PATH = "/api/bank/callback"
 
 
 class CallbackQuery(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    state: str = Field(pattern=r"^\d{1,5}\.[A-Za-z0-9_-]{16,128}$")
+    state: str = Field(pattern=STATE_PATTERN)
     code: str | None = Field(default=None, min_length=1, max_length=2048)
     error: str | None = Field(default=None, max_length=200)
 
@@ -51,7 +53,6 @@ def callback(
 
 def create_router(local_callback_path: str | None = None) -> APIRouter:
     router = APIRouter()
-    router.add_api_route("/api/bank/callback", callback, methods=["GET"])
-    if local_callback_path:
-        router.add_api_route(local_callback_path, callback, methods=["GET"])
+    for path in {CALLBACK_PATH, local_callback_path} - {None}:
+        router.add_api_route(path, callback, methods=["GET"])
     return router
