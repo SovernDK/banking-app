@@ -11,6 +11,7 @@ import httpx2
 import pytest
 
 from app.banking.store import STORE_FILENAME
+from app.categories import CATEGORIES_FILENAME
 from app.tls import generate_private_key, write_private_key
 
 SERVER_START_TIMEOUT_SECONDS = 20
@@ -130,11 +131,13 @@ def base_url(
 
 @pytest.fixture
 def fake_bank(fake_bank_url: str, app_data_dir: Path) -> Callable[..., None]:
-    """Resets the fake bank and the app's stored connection; call it to seed bank data."""
+    """Resets the fake bank, the app's stored connection and its categories; call it to seed
+    bank data."""
 
     def configure(**config: Any) -> None:
         httpx2.post(f"{fake_bank_url}/_fake/configure", json=config).raise_for_status()
 
     configure()
     (app_data_dir / STORE_FILENAME).unlink(missing_ok=True)
+    (app_data_dir / CATEGORIES_FILENAME).unlink(missing_ok=True)
     return configure

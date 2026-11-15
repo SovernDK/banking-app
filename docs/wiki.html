@@ -42,7 +42,10 @@ flowchart LR
   end
   N --> SV[BankingService<br/>app/banking/service.py]
   R --> SV
-  N --> D[spending.py<br/>daily totals]
+  N --> D[spending.py<br/>daily totals, spending_by]
+  N --> BP[bank_profiles/<br/>payment method per bank]
+  N --> CAT[categories.py<br/>CategoryBook + rules]
+  CAT --> CS[(CategoryStore<br/>.yiji/categories.json)]
   SV --> CL[EnableBankingClient<br/>JWT RS256, httpx2]
   SV --> ST[(BankStore<br/>.yiji/bank.json)]
   CL --> E[(api.enablebanking.com<br/>sandbox or production app)]
@@ -75,8 +78,32 @@ sequenceDiagram
   U->>Y: GET /?period=week|month
   Y->>EB: GET /accounts/{uid}/transactions (last 30 days, cached 6 h)
   Y-->>U: KPI total + "Spending per day" bar chart
+  Y-->>U: Payment methods + Categories donuts, Counterparties table
 </pre>
 <p>Spending = debits (<code>DBIT</code>) excluding cancelled/rejected, by booking → value → transaction date, in the currency with most spending. Periods are rolling 7 / 30 days ending today.</p>
+</section>
+
+<section>
+<h2>Spending breakdown</h2>
+<pre class="mermaid">
+flowchart LR
+  T[Spending in period<br/>main currency] --> PF["profile_for(ASPSP name, country)"]
+  PF -->|Mock ASPSP / FI| MA[mock_aspsp: ISO codes, else creditor → Transfer]
+  PF -->|any other bank| GE[generic: ISO bank transaction code, else Other]
+  MA --> PM((Payment methods donut))
+  GE --> PM
+  T --> CN["Counterparty name<br/>creditor, else 1st remittance line"]
+  CN --> RU{Category rule?<br/>case/space-insensitive}
+  RU -->|yes| CD((Categories donut))
+  RU -->|no| UC[Uncategorised] --> CD
+  CT[Counterparties table<br/>select / type new name] -->|assign| RU
+  MD[Manage categories dialog<br/>rename · delete] --> RU
+</pre>
+<ul>
+<li>Payment methods: ATM withdrawal, Card payment, BLIK, Transfer, Direct debit, Fee, Other. Add a bank = one file in <code>app/bank_profiles/</code> + an entry in its registry (see <code>docs/adr/0001</code>).</li>
+<li>Categories are user-created (seeded from <code>YIJI_STARTER_CATEGORIES</code> on first run); deleting one makes its names Uncategorised. A category gets a palette colour when first used and keeps it.</li>
+<li>Donuts show at most 7 slices: 6 biggest categories + hatched "Other" + grey "Uncategorised". Terms: <code>GLOSSARY.md</code>.</li>
+</ul>
 </section>
 
 <section>
@@ -85,7 +112,7 @@ sequenceDiagram
 sequenceDiagram
   Browser->>FastAPI: GET /
   FastAPI->>NiceGUI: @ui.page("/") dashboard_page
-  NiceGUI->>NiceGUI: not configured → alert · not connected → empty_state + Connect · connected → period_filter, kpi_tile, chart
+  NiceGUI->>NiceGUI: not configured → alert · not connected → empty_state + Connect · connected → period_filter, kpi_tile, chart, Donut ×2, CounterpartiesTable · category edits update Donut + table in place (no re-render, no scroll jump)
   NiceGUI->>NiceGUI: session ended → stored session cleared, "expired" alert + Connect · other bank error → "unavailable" alert, session kept
   NiceGUI-->>Browser: HTML + websocket for live updates
 </pre>
@@ -102,12 +129,17 @@ app/
   api/bank.py        Bank callback at /api/bank/callback + local redirect path (e.g. /callback)
   tls.py             python -m app.tls: self-signed localhost certificate for HTTPS
   banking/           Enable Banking client, models, store, service, error codes
-  spending.py        Period + daily spending aggregation (pure)
+  spending.py        Period, daily spending, spending_by / top_shares (pure)
+  payment_methods.py PaymentMethod enum
+  bank_profiles/     Per-bank payment-method rules: generic (ISO codes), mock_aspsp; profile_for()
+  categories.py      Category, CategoryBook (rules by counterparty name), CategoryStore
+  json_file.py       Atomic JSON write shared by the stores
   ui/
     palette.py       Colour tokens, light + dark
     format.py        money / pct / date rendering
-    components/      page_shell, overview_band, section, empty_state, chart,
-                     period_filter, kpi_tile, chip, primary_button, alert
+    components/      page_shell, overview_band, section, empty_state, chart, Donut,
+                     period_filter, kpi_tile, chip, primary_button, ghost_button, alert,
+                     CounterpartiesTable, manage_categories_dialog
     pages/           dashboard ("/")
 site/                Static pages (callback relay, privacy, terms), published to public repo yiji-site
 scripts/             publish-site.sh: copy site/ to the Pages repo
@@ -116,6 +148,8 @@ tests/
   unit/              pytest
   e2e/               Playwright; conftest starts app + fake bank; pages/ = page objects
 docs/wiki.html       this page
+docs/adr/            Architecture decision records
+GLOSSARY.md          Domain terms (Payment method, Bank profile, Category, …)
 </pre>
 </section>
 
@@ -151,7 +185,7 @@ uv run pytest -m sandbox                  # live: real sandbox app from .env</pr
 <tr><td><code>YIJI_HOST</code></td><td>127.0.0.1</td><td>Bind address</td></tr>
 <tr><td><code>YIJI_PORT</code></td><td>8100</td><td>HTTP port (1–65535)</td></tr>
 <tr><td><code>YIJI_RELOAD</code></td><td>false</td><td>Auto-reload on code changes (dev)</td></tr>
-<tr><td><code>YIJI_DATA_DIR</code></td><td>.yiji/</td><td>Bank session + cached transactions (git-ignored)</td></tr>
+<tr><td><code>YIJI_DATA_DIR</code></td><td>.yiji/</td><td>Bank session + cached transactions, categories (git-ignored)</td></tr>
 <tr><td><code>YIJI_ENABLE_BANKING_ENVIRONMENT</code></td><td>sandbox</td><td><code>sandbox</code> or <code>production</code>; picks which app id/key pair is used</td></tr>
 <tr><td><code>YIJI_ENABLE_BANKING_API_URL</code></td><td>https://api.enablebanking.com</td><td>API base (E2E points it at the fake)</td></tr>
 <tr><td><code>YIJI_ENABLE_BANKING_SANDBOX_REDIRECT_URL</code></td><td>https://localhost:8100/callback</td><td>Sandbox redirect; loopback URLs are served by the app itself</td></tr>
@@ -161,6 +195,7 @@ uv run pytest -m sandbox                  # live: real sandbox app from .env</pr
 <tr><td><code>YIJI_ENABLE_BANKING_CONSENT_DAYS</code></td><td>90</td><td>Requested access length (1–180)</td></tr>
 <tr><td><code>YIJI_ENABLE_BANKING_TIMEOUT_SECONDS</code></td><td>30</td><td>HTTP timeout</td></tr>
 <tr><td><code>YIJI_TRANSACTIONS_REFRESH_MINUTES</code></td><td>360</td><td>Cache lifetime; PSD2 limits background fetches to ~4/day</td></tr>
+<tr><td><code>YIJI_STARTER_CATEGORIES</code></td><td>Groceries, Eating out, Transport, Housing, Shopping, Health, Entertainment</td><td>JSON list seeded once when no categories file exists; names 1–40 chars</td></tr>
 <tr><td><code>ENABLE_BANKING_APP_ID</code></td><td>—</td><td>Enable Banking application ID (production)</td></tr>
 <tr><td><code>ENABLE_BANKING_KEY_PATH</code></td><td>—</td><td>Private key file; relative paths resolve from the project root; must be an unencrypted RSA PEM key (checked at startup)</td></tr>
 <tr><td><code>ENABLE_BANKING_SANDBOX_ID</code></td><td>—</td><td>Enable Banking application ID (sandbox)</td></tr>

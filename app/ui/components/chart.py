@@ -25,8 +25,9 @@ def chart(option: dict[str, Any], *, dark: bool, testid: str) -> ui.echart:
         "textStyle": {"fontFamily": FONT_FAMILY, "color": palette.muted},
         "grid": {"left": 8, "right": 8, "top": 16, "bottom": 8, "containLabel": True},
         **option,
-        "xAxis": {**axis, **option.get("xAxis", {})},
-        "yAxis": {**axis, **option.get("yAxis", {})},
         "tooltip": {**tooltip, **option.get("tooltip", {})},
     }
+    for name in ("xAxis", "yAxis"):
+        if name in option:
+            themed[name] = {**axis, **option[name]}
     return ui.echart(themed).classes("w-full h-72").props(f'data-testid="{testid}"')

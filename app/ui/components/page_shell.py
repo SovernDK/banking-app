@@ -42,6 +42,7 @@ body {{
 .text-yiji-inverse {{ color: var(--yiji-inverse-text); }}
 .yiji-toggle {{ border: 1px solid var(--yiji-muted); }}
 .yiji-chip {{ border: 1px solid var(--yiji-border); }}
+.yiji-divider {{ border-bottom: 1px solid var(--yiji-border); }}
 .yiji-alert {{ background-color: var(--yiji-card-muted); }}
 .yiji-alert .q-icon {{ color: var(--q-warning); }}
 """
