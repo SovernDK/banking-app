@@ -1,0 +1,3 @@
+# Payment method is derived through a per-bank profile
+
+Banks fill Enable Banking's transaction fields very differently: some send ISO 20022 bank transaction codes, Polish banks mark BLIK only in the payment description, and the sandbox Mock ASPSP sends neither (just a creditor name and a synthetic description). A single global mapping would either misclassify one bank to suit another or grow into a tangle of special cases. So each bank (keyed by the configured ASPSP name and country) gets its own bank profile in `app/bank_profiles/`, and banks without one fall back to a generic profile that reads only ISO codes and otherwise answers Other. Adding a bank means adding one profile built from that bank's real sample data.
