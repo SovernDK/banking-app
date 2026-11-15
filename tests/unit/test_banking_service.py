@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -96,6 +97,28 @@ def test_transactions_are_cached_within_refresh_window(
     assert len(service.transactions()) == 2
 
 
+def test_cache_written_before_transactions_kept_counterparties_is_refetched(
+    service: BankingService,
+    fake_bank: FakeBankState,
+    store: BankStore,
+    clock: Clock,
+    tmp_path: Path,
+) -> None:
+    """Cached rows without creditor names left no counterparty to categorise."""
+    _connect(service)
+    fake_bank.transactions = [debit("5", clock().date(), creditor="Ella Korhonen")]
+    service.transactions()
+    legacy = store.load()
+    legacy_json = legacy.model_dump(mode="json", exclude={"cache_version"})
+    for transaction in legacy_json["transactions"]:
+        del transaction["creditor"]
+    (tmp_path / STORE_FILENAME).write_text(json.dumps(legacy_json))
+
+    cached = service.transactions()[0]
+
+    assert cached.creditor is not None and cached.creditor.name == "Ella Korhonen"
+
+
 def test_fetches_the_longest_filter_period(
     service: BankingService, fake_bank: FakeBankState
 ) -> None:
@@ -104,6 +127,23 @@ def test_fetches_the_longest_filter_period(
     service.transactions()
 
     assert fake_bank.requests[-1].query_params["date_from"] == "2026-10-17"
+
+
+def test_keeps_the_fields_breakdowns_need_across_the_stored_cache(
+    service: BankingService, fake_bank: FakeBankState, clock: Clock
+) -> None:
+    fake_bank.transactions = [
+        debit("10", clock().date(), creditor="Biedronka", remittance=["Card 1"], family="CCRD")
+    ]
+    _connect(service)
+    service.transactions()
+
+    cached = service.transactions()[0]
+
+    assert cached.creditor is not None and cached.creditor.name == "Biedronka"
+    assert cached.remittance_information == ["Card 1"]
+    assert cached.bank_transaction_code is not None
+    assert cached.bank_transaction_code.code == "CCRD"
 
 
 def test_expired_bank_session_disconnects(

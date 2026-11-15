@@ -80,7 +80,7 @@ class BankingService:
         stored = self._store.load()
         session = self._live_session(stored)
         refresh_after = timedelta(minutes=self._settings.transactions_refresh_minutes)
-        if stored.fetched_at and self._now() - stored.fetched_at < refresh_after:
+        if stored.has_fresh_cache(self._now(), refresh_after):
             return stored.transactions
         date_from = self.today() - timedelta(days=LONGEST_PERIOD.days - 1)
         try:
@@ -93,8 +93,7 @@ class BankingService:
             stored.replace_session(None)
             self._store.save(stored)
             raise
-        stored.transactions = transactions
-        stored.fetched_at = self._now()
+        stored.cache_transactions(transactions, self._now())
         self._store.save(stored)
         return transactions
 

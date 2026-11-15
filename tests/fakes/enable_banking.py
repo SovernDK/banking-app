@@ -15,13 +15,28 @@ FAKE_ACCOUNT_UID = "fake-account"
 SESSION_VALID_UNTIL = "2099-01-01T00:00:00+00:00"
 
 
-def debit(amount: str, booking_date: date, *, currency: str = "EUR") -> dict[str, Any]:
-    return {
+def debit(
+    amount: str,
+    booking_date: date,
+    *,
+    currency: str = "EUR",
+    creditor: str | None = None,
+    remittance: list[str] | None = None,
+    family: str | None = None,
+    sub_family: str | None = None,
+) -> dict[str, Any]:
+    transaction: dict[str, Any] = {
         "transaction_amount": {"amount": amount, "currency": currency},
         "credit_debit_indicator": "DBIT",
         "status": "BOOK",
         "booking_date": booking_date.isoformat(),
+        "remittance_information": remittance or [],
     }
+    if creditor is not None:
+        transaction["creditor"] = {"name": creditor}
+    if family or sub_family:
+        transaction["bank_transaction_code"] = {"code": family, "sub_code": sub_family}
+    return transaction
 
 
 class FakeBankConfig(BaseModel):

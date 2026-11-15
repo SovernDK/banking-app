@@ -29,6 +29,18 @@ class Amount(BaseModel):
     currency: str = Field(pattern=r"^[A-Z]{3}$")
 
 
+class Party(BaseModel):
+    name: str | None = None
+
+
+class BankTransactionCode(BaseModel):
+    """ISO 20022 family (`code`) and sub-family (`sub_code`) of a transaction."""
+
+    description: str | None = None
+    code: str | None = None
+    sub_code: str | None = None
+
+
 class Transaction(BaseModel):
     transaction_amount: Amount
     credit_debit_indicator: Literal["DBIT", "CRDT"]
@@ -36,6 +48,9 @@ class Transaction(BaseModel):
     booking_date: date | None = None
     value_date: date | None = None
     transaction_date: date | None = None
+    creditor: Party | None = None
+    remittance_information: list[str] = []
+    bank_transaction_code: BankTransactionCode | None = None
 
     @property
     def spent_on(self) -> date | None:
