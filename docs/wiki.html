@@ -86,8 +86,10 @@ sequenceDiagram
   Browser->>FastAPI: GET /
   FastAPI->>NiceGUI: @ui.page("/") dashboard_page
   NiceGUI->>NiceGUI: not configured → alert · not connected → empty_state + Connect · connected → period_filter, kpi_tile, chart
+  NiceGUI->>NiceGUI: session ended → stored session cleared, "expired" alert + Connect · other bank error → "unavailable" alert, session kept
   NiceGUI-->>Browser: HTML + websocket for live updates
 </pre>
+<p>"Session ended" = the bank error body's <code>error</code> contains <code>SESSION</code>: <code>EXPIRED_SESSION</code>, <code>CLOSED_SESSION</code>, <code>REVOKED_SESSION</code>, <code>SESSION_DOES_NOT_EXIST</code> (also <code>WRONG_SESSION_STATUS</code>). The HTTP status alone never ends a session.</p>
 </section>
 
 <section>
@@ -160,7 +162,7 @@ uv run pytest -m sandbox                  # live: real sandbox app from .env</pr
 <tr><td><code>YIJI_ENABLE_BANKING_TIMEOUT_SECONDS</code></td><td>30</td><td>HTTP timeout</td></tr>
 <tr><td><code>YIJI_TRANSACTIONS_REFRESH_MINUTES</code></td><td>360</td><td>Cache lifetime; PSD2 limits background fetches to ~4/day</td></tr>
 <tr><td><code>ENABLE_BANKING_APP_ID</code></td><td>—</td><td>Enable Banking application ID (production)</td></tr>
-<tr><td><code>ENABLE_BANKING_KEY_PATH</code></td><td>—</td><td>Private key file; relative paths resolve from the project root; must exist</td></tr>
+<tr><td><code>ENABLE_BANKING_KEY_PATH</code></td><td>—</td><td>Private key file; relative paths resolve from the project root; must be an unencrypted RSA PEM key (checked at startup)</td></tr>
 <tr><td><code>ENABLE_BANKING_SANDBOX_ID</code></td><td>—</td><td>Enable Banking application ID (sandbox)</td></tr>
 <tr><td><code>ENABLE_BANKING_SANDBOX_KEY_PATH</code></td><td>—</td><td>Sandbox private key file; same path rules</td></tr>
 </table>

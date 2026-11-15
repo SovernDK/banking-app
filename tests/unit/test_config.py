@@ -1,10 +1,22 @@
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
+from cryptography.hazmat.primitives.asymmetric.types import PrivateKeyTypes
+from cryptography.hazmat.primitives.serialization import (
+    BestAvailableEncryption,
+    Encoding,
+    KeySerializationEncryption,
+    NoEncryption,
+    PrivateFormat,
+)
 from pydantic import ValidationError
 
 from app import config
 from app.config import PROJECT_ROOT, LocalCallbackError, MissingCredentialsError, Settings
+from app.tls import write_private_key
 
 
 def test_port_defaults_to_8100(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -48,11 +60,10 @@ def test_reads_enable_banking_ids_from_unprefixed_variables(
 
 @pytest.mark.parametrize("variable", ["ENABLE_BANKING_KEY_PATH", "ENABLE_BANKING_SANDBOX_KEY_PATH"])
 def test_resolves_relative_key_path_against_project_root(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, variable: str
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, private_key: RSAPrivateKey, variable: str
 ) -> None:
     key_file = tmp_path / "pkeys" / "key.pem"
-    key_file.parent.mkdir()
-    key_file.touch()
+    write_private_key(private_key, key_file)
     monkeypatch.setattr(config, "PROJECT_ROOT", tmp_path)
     monkeypatch.chdir(tmp_path.parent)
     monkeypatch.setenv(variable, "pkeys/key.pem")
@@ -63,9 +74,7 @@ def test_resolves_relative_key_path_against_project_root(
     assert getattr(settings, field) == key_file
 
 
-def test_keeps_absolute_key_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    key_file = tmp_path / "key.pem"
-    key_file.touch()
+def test_keeps_absolute_key_path(monkeypatch: pytest.MonkeyPatch, key_file: Path) -> None:
     monkeypatch.setenv("ENABLE_BANKING_KEY_PATH", str(key_file))
 
     assert Settings(_env_file=None).enable_banking_key_path == key_file  # type: ignore[call-arg]
@@ -80,6 +89,40 @@ def test_rejects_key_path_that_is_not_an_existing_file(
     monkeypatch.setenv("ENABLE_BANKING_KEY_PATH", missing_path)
 
     with pytest.raises(ValidationError, match="file not found"):
+        Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+def _pem(key: PrivateKeyTypes, encryption: KeySerializationEncryption) -> bytes:
+    return key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, encryption)
+
+
+@pytest.mark.parametrize(
+    "key_contents",
+    [
+        pytest.param(lambda rsa_key: b"not a key\n", id="not-pem"),
+        pytest.param(
+            lambda rsa_key: _pem(ec.generate_private_key(ec.SECP256R1()), NoEncryption()),
+            id="ec-key",
+        ),
+        pytest.param(
+            lambda rsa_key: _pem(rsa_key, BestAvailableEncryption(b"secret")), id="encrypted"
+        ),
+    ],
+)
+@pytest.mark.parametrize("variable", ["ENABLE_BANKING_KEY_PATH", "ENABLE_BANKING_SANDBOX_KEY_PATH"])
+def test_rejects_key_file_that_is_not_an_unencrypted_rsa_private_key(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    private_key: RSAPrivateKey,
+    key_contents: Callable[[RSAPrivateKey], bytes],
+    variable: str,
+) -> None:
+    """A bad key used to pass startup and then fail every page load with a 500."""
+    bad_key = tmp_path / "key.pem"
+    bad_key.write_bytes(key_contents(private_key))
+    monkeypatch.setenv(variable, str(bad_key))
+
+    with pytest.raises(ValidationError, match="unencrypted RSA private key"):
         Settings(_env_file=None)  # type: ignore[call-arg]
 
 
@@ -110,10 +153,8 @@ def test_environment_defaults_to_sandbox(monkeypatch: pytest.MonkeyPatch) -> Non
     ("environment", "expected_app_id"), [("sandbox", "sandbox-456"), ("production", "app-123")]
 )
 def test_credentials_follow_selected_environment(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, environment: str, expected_app_id: str
+    monkeypatch: pytest.MonkeyPatch, key_file: Path, environment: str, expected_app_id: str
 ) -> None:
-    key_file = tmp_path / "key.pem"
-    key_file.touch()
     monkeypatch.setenv("YIJI_ENABLE_BANKING_ENVIRONMENT", environment)
     monkeypatch.setenv("ENABLE_BANKING_APP_ID", "app-123")
     monkeypatch.setenv("ENABLE_BANKING_KEY_PATH", str(key_file))

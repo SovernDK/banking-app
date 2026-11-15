@@ -2,6 +2,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
+from cryptography.exceptions import UnsupportedAlgorithm
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from pydantic import Field, HttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -19,6 +22,18 @@ class MissingCredentialsError(ValueError):
 
 class LocalCallbackError(ValueError):
     pass
+
+
+def load_rsa_private_key(path: Path) -> RSAPrivateKey:
+    """Enable Banking signs requests with RS256, so only an unencrypted RSA key will do."""
+    problem = f"expected an unencrypted RSA private key in PEM format: {path}"
+    try:
+        key = load_pem_private_key(path.read_bytes(), password=None)
+    except (ValueError, TypeError, UnsupportedAlgorithm) as error:
+        raise ValueError(problem) from error
+    if not isinstance(key, RSAPrivateKey):
+        raise ValueError(problem)
+    return key
 
 
 class Settings(BaseSettings):
@@ -74,6 +89,13 @@ class Settings(BaseSettings):
         if not resolved.is_file():
             raise ValueError(f"file not found: {resolved}")
         return resolved
+
+    @field_validator("enable_banking_key_path", "enable_banking_sandbox_key_path")
+    @classmethod
+    def _require_rsa_key(cls, path: Path | None) -> Path | None:
+        if path is not None:
+            load_rsa_private_key(path)
+        return path
 
     @property
     def active_redirect_url(self) -> HttpUrl:

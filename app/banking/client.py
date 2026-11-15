@@ -4,11 +4,10 @@ from typing import Any, TypeVar
 
 import httpx2
 import jwt
-from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
-from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from pydantic import BaseModel, ValidationError
 
 from app.banking.models import AuthResponse, SessionResponse, Transaction, TransactionsPage
+from app.config import load_rsa_private_key
 
 JWT_LIFETIME = timedelta(hours=1)
 
@@ -37,10 +36,7 @@ class EnableBankingClient:
     def __init__(self, http: httpx2.Client, app_id: str, key_path: Path) -> None:
         self._http = http
         self._app_id = app_id
-        private_key = load_pem_private_key(key_path.read_bytes(), password=None)
-        if not isinstance(private_key, RSAPrivateKey):
-            raise ValueError(f"Enable Banking key must be an RSA private key: {key_path}")
-        self._private_key = private_key
+        self._private_key = load_rsa_private_key(key_path)
 
     def start_authorization(
         self,
