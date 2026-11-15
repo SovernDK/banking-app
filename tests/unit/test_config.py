@@ -197,6 +197,16 @@ def test_rejects_invalid_enable_banking_settings(
         Settings(_env_file=None)  # type: ignore[call-arg]
 
 
+@pytest.mark.parametrize("invalid_names", ['[""]', '["  "]', f'["{"x" * 41}"]'])
+def test_rejects_starter_categories_that_are_not_valid_category_names(
+    monkeypatch: pytest.MonkeyPatch, invalid_names: str
+) -> None:
+    monkeypatch.setenv("YIJI_STARTER_CATEGORIES", invalid_names)
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)  # type: ignore[call-arg]
+
+
 @pytest.mark.parametrize(
     ("environment", "expected"),
     [

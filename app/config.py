@@ -8,6 +8,8 @@ from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from pydantic import Field, HttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.categories import CategoryName
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 EnableBankingEnvironment = Literal["sandbox", "production"]
@@ -64,6 +66,15 @@ class Settings(BaseSettings):
     enable_banking_consent_days: int = Field(default=90, ge=1, le=180)
     enable_banking_timeout_seconds: float = Field(default=30, gt=0)
     transactions_refresh_minutes: int = Field(default=360, ge=1)
+    starter_categories: list[CategoryName] = [
+        "Groceries",
+        "Eating out",
+        "Transport",
+        "Housing",
+        "Shopping",
+        "Health",
+        "Entertainment",
+    ]
 
     enable_banking_app_id: str | None = Field(
         default=None, min_length=1, validation_alias="ENABLE_BANKING_APP_ID"
