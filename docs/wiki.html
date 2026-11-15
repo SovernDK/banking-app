@@ -62,7 +62,7 @@ sequenceDiagram
 <pre>
 app/
   main.py            FastAPI app; mounts NiceGUI with ui.run_with
-  config.py          Settings (pydantic-settings, env prefix YIJI_)
+  config.py          Settings (pydantic-settings; YIJI_* + ENABLE_BANKING_*)
   api/health.py      GET /api/health
   ui/
     palette.py       Colour tokens, light + dark
@@ -89,7 +89,7 @@ uv run pytest -m e2e                      # E2E</pre>
 
 <section>
 <h2>Config</h2>
-<p>Env vars or <code>.env</code> (see <code>.env.example</code>).</p>
+<p>Env vars or <code>.env</code> at the project root (see <code>.env.example</code>); the file is found from any working directory. Empty values count as unset.</p>
 <table>
 <tr><th>Variable</th><th>Default</th><th>Purpose</th></tr>
 <tr><td><code>YIJI_APP_TITLE</code></td><td>Yiji</td><td>Header and browser title</td></tr>
@@ -97,7 +97,12 @@ uv run pytest -m e2e                      # E2E</pre>
 <tr><td><code>YIJI_HOST</code></td><td>127.0.0.1</td><td>Bind address</td></tr>
 <tr><td><code>YIJI_PORT</code></td><td>8100</td><td>HTTP port (1–65535)</td></tr>
 <tr><td><code>YIJI_RELOAD</code></td><td>false</td><td>Auto-reload on code changes (dev)</td></tr>
+<tr><td><code>ENABLE_BANKING_APP_ID</code></td><td>—</td><td>Enable Banking application ID (production)</td></tr>
+<tr><td><code>ENABLE_BANKING_KEY_PATH</code></td><td>—</td><td>Private key file; relative paths resolve from the project root; must exist</td></tr>
+<tr><td><code>ENABLE_BANKING_SANDBOX_ID</code></td><td>—</td><td>Enable Banking application ID (sandbox)</td></tr>
+<tr><td><code>ENABLE_BANKING_SANDBOX_KEY_PATH</code></td><td>—</td><td>Sandbox private key file; same path rules</td></tr>
 </table>
+<p>Keep keys in <code>pkeys/</code> (git-ignored).</p>
 </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
