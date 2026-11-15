@@ -3,7 +3,7 @@ from contextlib import contextmanager
 
 from nicegui import ui
 
-from app.ui.palette import DARK, LIGHT, Palette
+from app.ui.palette import DARK, FONT_FAMILY, LIGHT, Palette
 
 
 def _theme_variables(palette: Palette) -> str:
@@ -24,7 +24,7 @@ body.body--dark {{ {_theme_variables(DARK)} }}
 body {{
     background-color: var(--yiji-page);
     color: var(--yiji-text);
-    font-family: Inter, system-ui, sans-serif;
+    font-family: {FONT_FAMILY};
     font-variant-numeric: tabular-nums;
 }}
 .yiji-top-bar {{
@@ -38,11 +38,17 @@ body {{
     border-color: var(--yiji-border);
 }}
 .text-muted {{ color: var(--yiji-muted); }}
+.bg-yiji-ink {{ background-color: var(--yiji-ink); }}
+.text-yiji-inverse {{ color: var(--yiji-inverse-text); }}
+.yiji-toggle {{ border: 1px solid var(--yiji-muted); }}
+.yiji-chip {{ border: 1px solid var(--yiji-border); }}
+.yiji-alert {{ background-color: var(--yiji-card-muted); }}
+.yiji-alert .q-icon {{ color: var(--q-warning); }}
 """
 
 
 @contextmanager
-def page_shell(title: str) -> Iterator[None]:
+def page_shell(title: str) -> Iterator[ui.dark_mode]:
     ui.colors(primary=LIGHT.ink, positive=LIGHT.gain, negative=LIGHT.loss, warning=LIGHT.warning)
     ui.add_css(THEME_CSS)
     dark_mode = ui.dark_mode()
@@ -52,4 +58,4 @@ def page_shell(title: str) -> Iterator[None]:
             'flat round color=inherit aria-label="Toggle dark mode"'
         )
     with ui.column().classes("w-full max-w-6xl mx-auto p-4 gap-4"):
-        yield
+        yield dark_mode

@@ -24,7 +24,7 @@
 <body>
 <main>
 <h1>Yiji</h1>
-<p class="lead">One-page personal finance app: bank transactions from Enable Banking, shown as filterable graphs. <em>Scaffold stage: Enable Banking integration not yet built.</em></p>
+<p class="lead">One-page personal finance app: bank transactions from Enable Banking, shown as filterable graphs.</p>
 
 <section>
 <h2>Architecture</h2>
@@ -40,10 +40,43 @@ flowchart LR
     C
     P
   end
-  S[Settings<br/>app/config.py] -.-> N
-  S -.-> R
-  R -.->|planned| E[(enablebanking.com)]
+  N --> SV[BankingService<br/>app/banking/service.py]
+  R --> SV
+  N --> D[spending.py<br/>daily totals]
+  SV --> CL[EnableBankingClient<br/>JWT RS256, httpx2]
+  SV --> ST[(BankStore<br/>.yiji/bank.json)]
+  CL --> E[(api.enablebanking.com<br/>sandbox or production app)]
+  S[Settings<br/>app/config.py] -.-> SV
+  GP[GitHub Pages yiji-site<br/>callback.html] -->|production: relay to 127.0.0.1:port| R
+  EB2[Bank / Mock ASPSP] -->|sandbox: https://localhost:8100/callback| R
 </pre>
+</section>
+
+<section>
+<h2>Bank connection flow</h2>
+<pre class="mermaid">
+sequenceDiagram
+  participant U as Browser
+  participant Y as Yiji (local)
+  participant EB as Enable Banking
+  participant GP as yiji-site callback.html
+  U->>Y: click "Connect bank"
+  Y->>EB: POST /auth (state = "port.nonce", redirect = active redirect URL)
+  EB-->>U: redirect to bank (Mock ASPSP in sandbox)
+  alt sandbox
+    U->>Y: GET https://localhost:8100/callback?code&state
+  else production
+    U->>GP: bank returns ?code&state (https required)
+    GP->>Y: GET /api/bank/callback (port from state, loopback only)
+  end
+  Y->>Y: check nonce (single use)
+  Y->>EB: POST /sessions {code}
+  Y-->>U: 303 → / (or /?bank_error=code)
+  U->>Y: GET /?period=week|month
+  Y->>EB: GET /accounts/{uid}/transactions (last 30 days, cached 6 h)
+  Y-->>U: KPI total + "Spending per day" bar chart
+</pre>
+<p>Spending = debits (<code>DBIT</code>) excluding cancelled/rejected, by booking → value → transaction date, in the currency with most spending. Periods are rolling 7 / 30 days ending today.</p>
 </section>
 
 <section>
@@ -52,7 +85,7 @@ flowchart LR
 sequenceDiagram
   Browser->>FastAPI: GET /
   FastAPI->>NiceGUI: @ui.page("/") dashboard_page
-  NiceGUI->>NiceGUI: page_shell → overview_band → empty_state
+  NiceGUI->>NiceGUI: not configured → alert · not connected → empty_state + Connect · connected → period_filter, kpi_tile, chart
   NiceGUI-->>Browser: HTML + websocket for live updates
 </pre>
 </section>
@@ -64,14 +97,22 @@ app/
   main.py            FastAPI app; mounts NiceGUI with ui.run_with
   config.py          Settings (pydantic-settings; YIJI_* + ENABLE_BANKING_*)
   api/health.py      GET /api/health
+  api/bank.py        Bank callback at /api/bank/callback + local redirect path (e.g. /callback)
+  tls.py             python -m app.tls: self-signed localhost certificate for HTTPS
+  banking/           Enable Banking client, models, store, service, error codes
+  spending.py        Period + daily spending aggregation (pure)
   ui/
     palette.py       Colour tokens, light + dark
     format.py        money / pct / date rendering
-    components/      page_shell, overview_band, section, empty_state
+    components/      page_shell, overview_band, section, empty_state, chart,
+                     period_filter, kpi_tile, chip, primary_button, alert
     pages/           dashboard ("/")
+site/                Static pages (callback relay, privacy, terms), published to public repo yiji-site
+scripts/             publish-site.sh: copy site/ to the Pages repo
 tests/
+  fakes/             Fake Enable Banking API (unit via TestClient, E2E via uvicorn)
   unit/              pytest
-  e2e/               Playwright; conftest starts uvicorn; pages/ = page objects
+  e2e/               Playwright; conftest starts app + fake bank; pages/ = page objects
 docs/wiki.html       this page
 </pre>
 </section>
@@ -80,11 +121,22 @@ docs/wiki.html       this page
 <h2>Usage</h2>
 <pre>uv sync                                   # install
 uv run playwright install chromium        # once, for E2E
-uv run python -m app                      # run → http://127.0.0.1:8100
+uv run python -m app.tls                  # once: print YIJI_SSL_* lines, add them to .env
+uv run python -m app                      # run → https://localhost:8100 (sandbox)
 uv run ruff check . && uv run ruff format --check .
 uv run pyright
 uv run pytest                             # unit
-uv run pytest -m e2e                      # E2E</pre>
+uv run pytest -m e2e                      # E2E (fake Enable Banking)
+uv run pytest -m sandbox                  # live: real sandbox app from .env</pre>
+<p>Tests only ever use the sandbox app; set <code>YIJI_ENABLE_BANKING_ENVIRONMENT=production</code> only for the real site.</p>
+<h2>One-time setup</h2>
+<ol>
+<li>Create the <b>public</b> repo <code>SovernDK/yiji-site</code> (this repo is private, so it can't use Pages); Settings → Pages → Deploy from branch <code>main</code> / root.</li>
+<li>Publish <code>site/</code> there: <code>scripts/publish-site.sh</code> (re-run after editing <code>site/</code>).</li>
+<li>Enable Banking control panel: sandbox redirect <code>https://localhost:8100/callback</code>; production redirect <code>https://sovernDK.github.io/yiji-site/callback.html</code>; privacy/terms URLs <code>…/privacy.html</code> and <code>…/terms.html</code>.</li>
+<li>Sandbox: <code>uv run python -m app.tls</code>, copy the printed lines to <code>.env</code>; accept the self-signed certificate warning once in the browser. <code>python -m app</code> refuses to start if the port or certificate doesn't match the redirect URL.</li>
+<li>Production: set your bank in <code>YIJI_ENABLE_BANKING_ASPSP_NAME</code> / <code>_COUNTRY</code>.</li>
+</ol>
 </section>
 
 <section>
@@ -97,6 +149,16 @@ uv run pytest -m e2e                      # E2E</pre>
 <tr><td><code>YIJI_HOST</code></td><td>127.0.0.1</td><td>Bind address</td></tr>
 <tr><td><code>YIJI_PORT</code></td><td>8100</td><td>HTTP port (1–65535)</td></tr>
 <tr><td><code>YIJI_RELOAD</code></td><td>false</td><td>Auto-reload on code changes (dev)</td></tr>
+<tr><td><code>YIJI_DATA_DIR</code></td><td>.yiji/</td><td>Bank session + cached transactions (git-ignored)</td></tr>
+<tr><td><code>YIJI_ENABLE_BANKING_ENVIRONMENT</code></td><td>sandbox</td><td><code>sandbox</code> or <code>production</code>; picks which app id/key pair is used</td></tr>
+<tr><td><code>YIJI_ENABLE_BANKING_API_URL</code></td><td>https://api.enablebanking.com</td><td>API base (E2E points it at the fake)</td></tr>
+<tr><td><code>YIJI_ENABLE_BANKING_SANDBOX_REDIRECT_URL</code></td><td>https://localhost:8100/callback</td><td>Sandbox redirect; loopback URLs are served by the app itself</td></tr>
+<tr><td><code>YIJI_ENABLE_BANKING_REDIRECT_URL</code></td><td>https://sovernDK.github.io/yiji-site/callback.html</td><td>Production redirect (hosted relay)</td></tr>
+<tr><td><code>YIJI_SSL_CERTFILE</code> / <code>YIJI_SSL_KEYFILE</code></td><td>—</td><td>Serve HTTPS (needed for an https localhost redirect)</td></tr>
+<tr><td><code>YIJI_ENABLE_BANKING_ASPSP_NAME</code> / <code>_COUNTRY</code></td><td>Mock ASPSP / FI</td><td>Bank to connect</td></tr>
+<tr><td><code>YIJI_ENABLE_BANKING_CONSENT_DAYS</code></td><td>90</td><td>Requested access length (1–180)</td></tr>
+<tr><td><code>YIJI_ENABLE_BANKING_TIMEOUT_SECONDS</code></td><td>30</td><td>HTTP timeout</td></tr>
+<tr><td><code>YIJI_TRANSACTIONS_REFRESH_MINUTES</code></td><td>360</td><td>Cache lifetime; PSD2 limits background fetches to ~4/day</td></tr>
 <tr><td><code>ENABLE_BANKING_APP_ID</code></td><td>—</td><td>Enable Banking application ID (production)</td></tr>
 <tr><td><code>ENABLE_BANKING_KEY_PATH</code></td><td>—</td><td>Private key file; relative paths resolve from the project root; must exist</td></tr>
 <tr><td><code>ENABLE_BANKING_SANDBOX_ID</code></td><td>—</td><td>Enable Banking application ID (sandbox)</td></tr>

@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app import config
-from app.config import PROJECT_ROOT, Settings
+from app.config import PROJECT_ROOT, LocalCallbackError, MissingCredentialsError, Settings
 
 
 def test_port_defaults_to_8100(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -79,7 +79,7 @@ def test_rejects_key_path_that_is_not_an_existing_file(
     monkeypatch.setattr(config, "PROJECT_ROOT", tmp_path)
     monkeypatch.setenv("ENABLE_BANKING_KEY_PATH", missing_path)
 
-    with pytest.raises(ValidationError, match="key file not found"):
+    with pytest.raises(ValidationError, match="file not found"):
         Settings(_env_file=None)  # type: ignore[call-arg]
 
 
@@ -98,3 +98,115 @@ def test_treats_empty_enable_banking_values_as_unset(monkeypatch: pytest.MonkeyP
     assert settings.enable_banking_key_path is None
     assert settings.enable_banking_sandbox_id is None
     assert settings.enable_banking_sandbox_key_path is None
+
+
+def test_environment_defaults_to_sandbox(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("YIJI_ENABLE_BANKING_ENVIRONMENT", raising=False)
+
+    assert Settings(_env_file=None).enable_banking_environment == "sandbox"  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize(
+    ("environment", "expected_app_id"), [("sandbox", "sandbox-456"), ("production", "app-123")]
+)
+def test_credentials_follow_selected_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, environment: str, expected_app_id: str
+) -> None:
+    key_file = tmp_path / "key.pem"
+    key_file.touch()
+    monkeypatch.setenv("YIJI_ENABLE_BANKING_ENVIRONMENT", environment)
+    monkeypatch.setenv("ENABLE_BANKING_APP_ID", "app-123")
+    monkeypatch.setenv("ENABLE_BANKING_KEY_PATH", str(key_file))
+    monkeypatch.setenv("ENABLE_BANKING_SANDBOX_ID", "sandbox-456")
+    monkeypatch.setenv("ENABLE_BANKING_SANDBOX_KEY_PATH", str(key_file))
+
+    credentials = Settings(_env_file=None).enable_banking_credentials()  # type: ignore[call-arg]
+
+    assert credentials == (expected_app_id, key_file)
+
+
+def test_missing_credentials_for_selected_environment_raise_clear_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("YIJI_ENABLE_BANKING_ENVIRONMENT", "production")
+    monkeypatch.delenv("ENABLE_BANKING_APP_ID", raising=False)
+    monkeypatch.delenv("ENABLE_BANKING_KEY_PATH", raising=False)
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    with pytest.raises(MissingCredentialsError, match="production"):
+        settings.enable_banking_credentials()
+
+
+@pytest.mark.parametrize(
+    ("variable", "invalid_value"),
+    [
+        ("YIJI_ENABLE_BANKING_ENVIRONMENT", "staging"),
+        ("YIJI_ENABLE_BANKING_ASPSP_COUNTRY", "fin"),
+        ("YIJI_ENABLE_BANKING_CONSENT_DAYS", "181"),
+        ("YIJI_ENABLE_BANKING_API_URL", "not a url"),
+    ],
+)
+def test_rejects_invalid_enable_banking_settings(
+    monkeypatch: pytest.MonkeyPatch, variable: str, invalid_value: str
+) -> None:
+    monkeypatch.setenv(variable, invalid_value)
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize(
+    ("environment", "expected"),
+    [
+        ("sandbox", "https://localhost:8100/callback"),
+        ("production", "https://sovernDK.github.io/yiji-site/callback.html"),
+    ],
+)
+def test_redirect_url_follows_selected_environment(
+    monkeypatch: pytest.MonkeyPatch, environment: str, expected: str
+) -> None:
+    monkeypatch.setenv("YIJI_ENABLE_BANKING_ENVIRONMENT", environment)
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert str(settings.active_redirect_url).lower() == expected.lower()
+
+
+@pytest.mark.parametrize(
+    ("redirect_url", "expected_path"),
+    [
+        ("https://localhost:8080/callback", "/callback"),
+        ("http://127.0.0.1:8100/bank/return", "/bank/return"),
+        ("https://sovernDK.github.io/yiji-site/callback.html", None),
+    ],
+)
+def test_local_callback_path_is_set_only_for_loopback_redirects(
+    redirect_url: str, expected_path: str | None
+) -> None:
+    settings = Settings(_env_file=None, enable_banking_sandbox_redirect_url=redirect_url)  # type: ignore[call-arg]
+
+    assert settings.local_callback_path() == expected_path
+
+
+def test_local_https_callback_requires_matching_port_and_certificate(tmp_path: Path) -> None:
+    certificate = tmp_path / "localhost.crt"
+    key = tmp_path / "localhost.key"
+    certificate.touch()
+    key.touch()
+
+    wrong_port = Settings(_env_file=None, port=9000)  # type: ignore[call-arg]
+    without_tls = Settings(_env_file=None, port=8100)  # type: ignore[call-arg]
+    ready = Settings(_env_file=None, port=8100, ssl_certfile=certificate, ssl_keyfile=key)  # type: ignore[call-arg]
+
+    with pytest.raises(LocalCallbackError, match="YIJI_PORT=8100"):
+        wrong_port.check_local_callback()
+    with pytest.raises(LocalCallbackError, match="YIJI_SSL_CERTFILE"):
+        without_tls.check_local_callback()
+    ready.check_local_callback()
+
+
+def test_hosted_redirect_needs_no_local_server_setup() -> None:
+    settings = Settings(_env_file=None, enable_banking_environment="production", port=8100)  # type: ignore[call-arg]
+
+    settings.check_local_callback()

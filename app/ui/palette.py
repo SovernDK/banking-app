@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+FONT_FAMILY = "Inter, system-ui, sans-serif"
+
 
 @dataclass(frozen=True)
 class Palette:

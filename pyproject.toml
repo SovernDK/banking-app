@@ -5,9 +5,11 @@ description = "Personal finance app: bank transaction history from Enable Bankin
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.163.1",
+    "httpx2>=2.16.0",
     "nicegui>=4.0.0",
     "pydantic>=2",
     "pydantic-settings>=2.16.3",
+    "pyjwt[crypto]>=2.15.1",
     "uvicorn>=0.54.0",
 ]
 
@@ -29,12 +31,14 @@ venv = ".venv"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["e2e: end-to-end browser tests (need `uv run playwright install chromium`)"]
-addopts = "-m 'not e2e'"
+markers = [
+    "e2e: end-to-end browser tests (need `uv run playwright install chromium`)",
+    "sandbox: live tests against the Enable Banking sandbox (opt-in, needs .env credentials)",
+]
+addopts = "-m 'not e2e and not sandbox'"
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
     "pyright>=1.1.414",
     "pytest>=9.2.0",
     "pytest-playwright>=0.10.0",
