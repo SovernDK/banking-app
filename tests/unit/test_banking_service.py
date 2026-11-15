@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from app.banking.client import BankSessionExpiredError, EnableBankingClient
+from app.banking.client import BankApiError, BankSessionExpiredError, EnableBankingClient
 from app.banking.service import BankingService, InvalidStateError, NotConnectedError
 from app.banking.store import STORE_FILENAME, BankStore
 from app.config import Settings
@@ -116,6 +116,20 @@ def test_expired_bank_session_disconnects(
         service.transactions()
     with pytest.raises(NotConnectedError):
         service.transactions()
+
+
+def test_bank_refusal_that_is_not_about_the_session_keeps_the_connection(
+    service: BankingService, fake_bank: FakeBankState
+) -> None:
+    _connect(service)
+    fake_bank.failure_status = 401
+
+    with pytest.raises(BankApiError) as raised:
+        service.transactions()
+    assert not isinstance(raised.value, BankSessionExpiredError)
+
+    fake_bank.failure_status = None
+    assert service.transactions() == []
 
 
 def test_session_past_valid_until_is_not_connected(service: BankingService, clock: Clock) -> None:

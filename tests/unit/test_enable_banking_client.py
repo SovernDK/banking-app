@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -75,15 +76,6 @@ def test_fetch_transactions_follows_continuation_keys(
     ]
 
 
-def test_expired_session_raises_session_expired(
-    bank_client: EnableBankingClient, fake_bank: FakeBankState
-) -> None:
-    fake_bank.session_expired = True
-
-    with pytest.raises(BankSessionExpiredError):
-        bank_client.fetch_transactions(FAKE_ACCOUNT_UID, date(2026, 11, 1))
-
-
 def test_server_error_raises_bank_api_error(
     bank_client: EnableBankingClient, fake_bank: FakeBankState
 ) -> None:
@@ -104,29 +96,46 @@ def test_malformed_response_raises_bank_api_error(
         bank_client.fetch_transactions(FAKE_ACCOUNT_UID, date(2026, 11, 1))
 
 
+def _client_answering(
+    handler: Callable[[httpx2.Request], httpx2.Response], key_file: Path
+) -> EnableBankingClient:
+    http = httpx2.Client(base_url="https://bank.test", transport=httpx2.MockTransport(handler))
+    return EnableBankingClient(http=http, app_id=TEST_APP_ID, key_path=key_file)
+
+
 def test_network_failure_raises_bank_api_error(key_file: Path) -> None:
     def refuse(request: httpx2.Request) -> httpx2.Response:
         raise httpx2.ConnectError("refused", request=request)
 
-    http = httpx2.Client(base_url="https://bank.test", transport=httpx2.MockTransport(refuse))
-    client = EnableBankingClient(http=http, app_id=TEST_APP_ID, key_path=key_file)
-
     with pytest.raises(BankApiError):
-        client.create_session(FAKE_CODE)
+        _client_answering(refuse, key_file).create_session(FAKE_CODE)
 
 
-@pytest.mark.parametrize("error_code", ["", "INVALID_JWT"])
-def test_unauthorized_without_session_error_is_not_treated_as_expired_session(
-    key_file: Path, error_code: str
+@pytest.mark.parametrize(
+    ("status", "body", "session_ended"),
+    [
+        # Session error codes from https://enablebanking.com/docs/api/reference/ (ErrorCode).
+        (401, b'{"code": 401, "error": "EXPIRED_SESSION"}', True),
+        (401, b'{"code": 401, "error": "CLOSED_SESSION"}', True),
+        (401, b'{"code": 401, "error": "REVOKED_SESSION"}', True),
+        (404, b'{"code": 404, "error": "SESSION_DOES_NOT_EXIST"}', True),
+        (401, b'{"code": 401, "error": "UNAUTHORIZED_ACCESS"}', False),
+        (403, b'{"code": 403, "error": "ACCESS_DENIED"}', False),
+        (401, b'{"code": 401, "error": ""}', False),
+        (401, b'{"code": 401}', False),
+        (401, b'{"code": 401, "error": ["EXPIRED_SESSION"]}', False),
+        (401, b'["EXPIRED_SESSION"]', False),
+        (401, b"<html>EXPIRED_SESSION</html>", False),
+    ],
+)
+def test_only_session_error_codes_are_treated_as_an_ended_bank_session(
+    key_file: Path, status: int, body: bytes, session_ended: bool
 ) -> None:
-    """A rejected app key must not wipe the user's stored bank session."""
+    """Any other refusal, e.g. a rejected app key, must not wipe the user's stored bank session."""
 
-    def unauthorized(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(401, json={"code": 401, "error": error_code})
-
-    http = httpx2.Client(base_url="https://bank.test", transport=httpx2.MockTransport(unauthorized))
-    client = EnableBankingClient(http=http, app_id=TEST_APP_ID, key_path=key_file)
+    def refuse(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(status, content=body)
 
     with pytest.raises(BankApiError) as raised:
-        client.fetch_transactions(FAKE_ACCOUNT_UID, date(2026, 11, 1))
-    assert not isinstance(raised.value, BankSessionExpiredError)
+        _client_answering(refuse, key_file).fetch_transactions(FAKE_ACCOUNT_UID, date(2026, 11, 1))
+    assert isinstance(raised.value, BankSessionExpiredError) is session_ended
