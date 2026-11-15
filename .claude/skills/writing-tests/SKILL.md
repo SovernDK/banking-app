@@ -18,22 +18,21 @@ Test end to end: enter through the highest public entry point and fake only the 
 ## What every test file must cover
 
 1. The documented happy path
-2. Every error path: thrown errors, rejected promises, error returns
-3. Boundary inputs: empty arrays, zero, negative numbers, unicode strings
+2. Every error path the caller can see: raised exceptions, validation errors, error responses
+3. The boundaries the code actually branches on (empty input, limits, invalid values)
 4. If fixing a bug: write the failing regression test FIRST, then the fix
 
 ## Naming
 
-- `it` strings state behavior, not implementation:
-  "rejects invoices with a negative total", never "works correctly"
-- Regression tests cite the issue: "handles empty line items (#482)"
+- Test names state behaviour, not implementation: `test_rejects_invoice_with_negative_total`, never `test_works`
+- Regression tests cite the issue in the docstring: "Empty line items (#482)."
 
 ## Mocking policy
 
 - Mock at system boundaries only: network, filesystem, clock, randomness
 - NEVER mock the module under test or its pure helpers
-- Use fake timers for time-dependent code; never sleep in a test
-- Restore all mocks in afterEach
+- Control time through an injected clock or a fixture; never sleep in a test
+- Patch with `monkeypatch` so changes are undone after each test
 
 ## Keep the suite lean
 

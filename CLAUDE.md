@@ -41,7 +41,7 @@ uv run pytest -m e2e                             # end-to-end tests (first: uv r
 ## Testing
 
 ### Unit tests
-- **Always load the `test-writing` skill before writing or changing unit tests** and follow it.
+- **Always load the `writing-tests` skill before writing or changing unit tests** and follow it.
 - Every new feature or bug fix comes with unit tests; a bug fix starts with a failing test that reproduces it.
 - Unit tests live in `tests/unit`.
 - Run `uv run pytest` before declaring a task done.
@@ -57,7 +57,7 @@ uv run pytest -m e2e                             # end-to-end tests (first: uv r
 
 ## BUG Fixing
 
-- ALWAYS fix root cause of the bugs, DONT create workarounds.
+- Fix the root cause of a bug, not its symptom: a workaround leaves the defect in place for the next caller.
 
 ## UI and design
 

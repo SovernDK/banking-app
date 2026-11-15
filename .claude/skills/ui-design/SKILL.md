@@ -17,6 +17,7 @@ Visual reference: "CRM Dashboard App Design" by Ronas IT (dribbble.com/shots/257
 
 ## Components
 Pages are composed only from `app/ui/components/`. Don't style raw `ui.*` elements in page code; if a pattern appears twice, make it a component.
+Built so far: `page_shell`, `overview_band`, `section`, `empty_state`, and `money`/`pct`/`date`. The other rows are the spec for components still to build; create each one in `app/ui/components/` the first time a page needs it.
 
 | Component | Purpose |
 |---|---|
@@ -29,7 +30,7 @@ Pages are composed only from `app/ui/components/`. Don't style raw `ui.*` elemen
 | `gauge(value, label)` | ECharts gauge drawn as tick marks (filled ticks = ink, rest = track); for a single ratio such as budget used |
 | `data_table(rows, columns)` | Wraps `ui.aggrid`; money columns right-aligned and formatted |
 | `chip(icon, text)` | Small outlined pill (date, count) |
-| `money(value)`, `pct(value)`, `date(value)` | The only way to render numbers and dates (`app/ui/format.py`) |
+| `money(value, currency)`, `pct(value)`, `date(value)` | The only way to render numbers and dates (`app/ui/format.py`) |
 | `empty_state(message)` | Shown instead of an empty chart or table |
 
 Data-bound components are `@ui.refreshable`; a filter change refreshes them all.
@@ -44,7 +45,7 @@ Data-bound components are `@ui.refreshable`; a filter change refreshes them all.
 - **Nav / selected item:** `card-muted` pill behind it.
 
 ## Typography
-- One family: **Inter** (self-hosted via `app.add_static_files`, fallback `system-ui, sans-serif`); applied globally in `page_shell` and to ECharts `textStyle`.
+- One family: **Inter** (fallback `system-ui, sans-serif`), set globally in `page_shell` and on ECharts `textStyle`. To self-host it, serve the font files with `app.add_static_files`.
 - All numbers use `tabular-nums` so columns and KPIs align.
 - Large text is light, not bold: KPI value `text-4xl font-normal`; section/column title `text-2xl font-normal`; card title `text-lg font-medium`; body/table `text-sm`; labels, axes, captions `text-xs text-muted`.
 - Weights 400 / 500 only; 600 only for the app name. No all-caps.
