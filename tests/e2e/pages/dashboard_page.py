@@ -52,6 +52,21 @@ class DashboardPage:
     def confirm_delete(self) -> None:
         self.page.get_by_test_id("confirm-delete").click()
 
+    def search_counterparties(self, text: str) -> None:
+        self.counterparty_filter.click()
+        self.page.keyboard.type(text)
+
+    def filter_by_counterparty(self, name: str) -> None:
+        self.search_counterparties(name)
+        self.page.get_by_role("option", name=name, exact=True).click()
+
+    def filter_by_category(self, name: str) -> None:
+        self.category_filter.click()
+        self.page.get_by_role("option", name=name, exact=True).click()
+
+    def clear_filters(self) -> None:
+        self.clear_filters_button.click()
+
     def legend_entry(self, legend: Locator, label: str) -> Locator:
         return legend.get_by_role("listitem").filter(has=self.page.get_by_text(label, exact=True))
 
@@ -112,3 +127,23 @@ class DashboardPage:
     @property
     def total(self) -> Locator:
         return self.page.get_by_test_id("total")
+
+    @property
+    def total_label(self) -> Locator:
+        return self.page.get_by_test_id("total-label")
+
+    @property
+    def counterparty_filter(self) -> Locator:
+        return self.page.get_by_test_id("counterparty-filter")
+
+    @property
+    def category_filter(self) -> Locator:
+        return self.page.get_by_test_id("category-filter")
+
+    @property
+    def filter_options(self) -> Locator:
+        return self.page.get_by_role("option")
+
+    @property
+    def clear_filters_button(self) -> Locator:
+        return self.page.get_by_role("button", name="Clear filters")

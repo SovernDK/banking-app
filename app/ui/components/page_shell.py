@@ -13,8 +13,11 @@ def _theme_variables(palette: Palette) -> str:
         f" --yiji-text: {palette.text}; --yiji-muted: {palette.muted};"
         f" --yiji-band: {palette.band}; --yiji-page: {palette.page};"
         f" --yiji-card: {palette.card}; --yiji-card-muted: {palette.card_muted};"
-        f" --yiji-border: {palette.border};"
-        f" --q-primary: {palette.ink}; --q-positive: {palette.gain};"
+        f" --yiji-border: {palette.border}; --yiji-other-category: {palette.other_category};"
+        + "".join(
+            f" --yiji-category-{slot}: {colour};" for slot, colour in enumerate(palette.categories)
+        )
+        + f" --q-primary: {palette.ink}; --q-positive: {palette.gain};"
         f" --q-negative: {palette.loss}; --q-warning: {palette.warning};"
     )
 

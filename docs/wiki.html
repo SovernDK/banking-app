@@ -75,7 +75,7 @@ sequenceDiagram
   Y->>Y: check nonce (single use)
   Y->>EB: POST /sessions {code}
   Y-->>U: 303 → / (or /?bank_error=code)
-  U->>Y: GET /?period=week|month
+  U->>Y: GET /?period=week|month[&counterparty=name | &category=id]
   Y->>EB: GET /accounts/{uid}/transactions (last 30 days, cached 6 h)
   Y-->>U: KPI total + "Spending per day" bar chart
   Y-->>U: Counterparties + Categories donuts
@@ -115,12 +115,32 @@ flowchart LR
 </section>
 
 <section>
+<h2>Spending filters</h2>
+<pre class="mermaid">
+flowchart LR
+  P[Period toggle<br/>week · month] --> O
+  CP["Counterparty select<br/>all-time names, searchable"] -->|resets Category| F{SpendingFilter<br/>one at a time}
+  CA["Category select<br/>colour swatches + Uncategorised"] -->|resets Counterparty| F
+  CL[Clear filters<br/>disabled when All] --> F
+  F --> O((Total + Spending per day))
+  F --> URL[URL ?counterparty= / ?category=]
+  URL -->|"parse: known value only,<br/>both or unknown → All"| F
+  ED[Settings category edit] -->|"revalidate: deleted → All"| F
+</pre>
+<ul>
+<li>Counterparty matching uses the Counterparties donut's names (case-insensitive, nameless → payment method); category matching uses the category rules. The donuts ignore the filter.</li>
+<li>Total label: "Spent on &lt;name&gt;, last month". Nothing in range → "No spending in this period." with the filter kept.</li>
+<li>Logic: <code>app/spending_filter.py</code> (pure). UI: <code>SpendingFilters</code> + <code>SpendingOverview</code>, both updated in place.</li>
+</ul>
+</section>
+
+<section>
 <h2>Request flow: opening the dashboard</h2>
 <pre class="mermaid">
 sequenceDiagram
   Browser->>FastAPI: GET /
   FastAPI->>NiceGUI: @ui.page("/") dashboard_page
-  NiceGUI->>NiceGUI: not configured → alert · not connected → empty_state + Connect · connected → period_filter, kpi_tile, chart, Donut ×2 + ⚙ SettingsDialog (CategoryList + CounterpartiesTable) · category edits update Donut, list and table in place (no re-render, no scroll jump)
+  NiceGUI->>NiceGUI: not configured → alert · not connected → empty_state + Connect · connected → period_filter, SpendingFilters, SpendingOverview, Donut ×2 + ⚙ SettingsDialog (CategoryList + CounterpartiesTable) · category edits update Donut, filters, overview, list and table in place (no re-render, no scroll jump)
   NiceGUI->>NiceGUI: session ended → stored session cleared, "expired" alert + Connect · other bank error → "unavailable" alert, session kept
   NiceGUI-->>Browser: HTML + websocket for live updates
 </pre>
@@ -141,13 +161,15 @@ app/
   payment_methods.py PaymentMethod enum
   bank_profiles/     Per-bank payment-method rules: generic (ISO codes), mock_aspsp; profile_for(), transaction_name()
   categories.py      Category, CategoryBook (rules by counterparty name), CategoryStore
+  spending_filter.py SpendingFilter (one counterparty or category; parse from URL), counterparty_names
   json_file.py       Atomic JSON write shared by the stores
   ui/
-    palette.py       Colour tokens, light + dark
+    palette.py       Colour tokens, light + dark (page_shell exposes them as CSS variables)
     format.py        money / pct / date rendering
     components/      page_shell, overview_band, section, empty_state, chart, Donut,
-                     period_filter, kpi_tile, chip, primary_button, ghost_button, alert,
-                     SettingsDialog, CategoryList, CounterpartiesTable
+                     period_filter, SpendingFilters, SpendingOverview, KpiTile, chip,
+                     primary_button, ghost_button, alert, SettingsDialog, CategoryList,
+                     CounterpartiesTable
     pages/           dashboard ("/")
 site/                Static pages (callback relay, privacy, terms), published to public repo yiji-site
 scripts/             publish-site.sh: copy site/ to the Pages repo

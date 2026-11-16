@@ -1,6 +1,6 @@
 from datetime import date
 from decimal import Decimal
-from typing import Any
+from urllib.parse import urlencode
 
 from nicegui import run, ui
 
@@ -19,7 +19,6 @@ from app.categories import (
 )
 from app.config import get_settings
 from app.spending import (
-    DailySpending,
     Period,
     Share,
     all_time_spending_by,
@@ -29,19 +28,20 @@ from app.spending import (
     spending_by,
     top_shares,
 )
-from app.ui import format as fmt
+from app.spending_filter import UNCATEGORISED, SpendingFilter, counterparty_names
 from app.ui.components import (
     CategoryEntry,
+    CategoryOption,
     CounterpartyRow,
     Donut,
     DonutSlice,
     PageShell,
     SettingsDialog,
+    SpendingFilters,
+    SpendingOverview,
     alert,
-    chart,
     chip,
     empty_state,
-    kpi_tile,
     overview_band,
     page_shell,
     period_filter,
@@ -68,22 +68,6 @@ def _connect_button(service: BankingService) -> None:
         ui.navigate.to(url)
 
     primary_button("Connect bank", connect, testid="connect-bank")
-
-
-def _spending_option(days: list[DailySpending], currency: str) -> dict[str, Any]:
-    return {
-        "xAxis": {"type": "category", "data": [fmt.date(entry.day) for entry in days]},
-        "yAxis": {"type": "value"},
-        "tooltip": {"trigger": "axis", "formatter": f"{{b}}<br/>{{c}} {currency}"},
-        "series": [
-            {
-                "name": "Spending",
-                "type": "bar",
-                "data": [float(entry.amount) for entry in days],
-                "itemStyle": {"borderRadius": [4, 4, 0, 0]},
-            }
-        ],
-    }
 
 
 CHART_SLICE_LIMIT = 7
@@ -124,6 +108,8 @@ def _spending_view(
     transactions: list[Transaction],
     today: date,
     initial: Period,
+    counterparty_query: str | None,
+    category_query: str | None,
     shell: PageShell,
     band: ui.column,
     profile: BankProfile,
@@ -142,20 +128,49 @@ def _spending_view(
     def spends_in(period: Period) -> bool:
         return any(entry.amount for entry in spending[period])
 
+    counterparties = counterparty_names(transactions, currency, profile)
+    spending_filter = SpendingFilter.parse(counterparty_query, category_query, counterparties, book)
+
+    def show_url() -> None:
+        query = urlencode({"period": selected.value, **spending_filter.query()})
+        # Settings callbacks run inside dialogs that may already be gone; the band outlives them
+        # and tells NiceGUI which browser to send the URL to.
+        with band:
+            ui.navigate.history.replace(f"/?{query}")
+
+    def overview_label() -> str:
+        subject = spending_filter.subject(book)
+        period = selected.label.lower()
+        return f"Spent on {subject}, {period}" if subject else f"Spent, {period}"
+
+    spending_overview: SpendingOverview | None = None
+
+    def show_overview() -> None:
+        if spending_overview is None:
+            return
+        matching = [
+            transaction
+            for transaction in transactions
+            if spending_filter.matches(transaction, profile, book)
+        ]
+        spending_overview.show(
+            daily_spending(matching, currency, selected, today), overview_label()
+        )
+
     @ui.refreshable
-    def overview(period: Period) -> None:
-        days = spending[period]
-        total = sum((entry.amount for entry in days), Decimal(0))
-        kpi_tile(f"Spent, {period.label.lower()}", fmt.money(total, currency), testid="total")
-        with section("Spending per day", currency):
-            if total == 0:
-                empty_state("No spending in this period.")
-            else:
-                chart(
-                    _spending_option(days, currency),
-                    dark=bool(dark_mode.value),
-                    testid="spending-chart",
-                )
+    def overview() -> None:
+        nonlocal spending_overview
+        spending_overview = SpendingOverview(currency, dark=bool(dark_mode.value))
+        show_overview()
+
+    def category_options() -> list[CategoryOption]:
+        return [
+            *(
+                CategoryOption(id=category.id, name=category.name, colour_slot=category.colour_slot)
+                for category in book.categories
+            ),
+            CategoryOption(id=UNCATEGORISED, name="Uncategorised", colour_slot=None),
+        ]
 
     def category_id_of(transaction: Transaction) -> str | None:
         category = book.category_of(counterparty_name(transaction))
@@ -181,9 +196,18 @@ def _spending_view(
     category_donut: Donut | None = None
 
     def show_categories() -> None:
+        nonlocal spending_filter
         if category_donut is not None:
             category_donut.update(category_slices())
         settings.update(category_entries(), category_names(), assigned_category)
+        revalidated = SpendingFilter.parse(
+            spending_filter.counterparty, spending_filter.category_id, counterparties, book
+        )
+        if revalidated != spending_filter:
+            spending_filter = revalidated
+            show_url()
+        filters.update_categories(category_options(), spending_filter)
+        show_overview()
 
     async def save_and_show() -> None:
         await run.io_bound(store.save, book)
@@ -273,13 +297,21 @@ def _spending_view(
     def select(period: Period) -> None:
         nonlocal selected
         selected = period
-        ui.navigate.history.replace(f"/?period={period}")
-        overview.refresh(period)
+        show_url()
+        show_overview()
         breakdown.refresh()
 
+    def choose(value: SpendingFilter) -> None:
+        nonlocal spending_filter
+        spending_filter = value
+        show_url()
+        show_overview()
+
     with band:
-        period_filter(initial, select)
-        overview(initial)
+        with ui.row().classes("w-full items-center gap-4"):
+            period_filter(initial, select)
+            filters = SpendingFilters(counterparties, category_options(), spending_filter, choose)
+        overview()
     breakdown()
 
     def redraw() -> None:
@@ -291,7 +323,12 @@ def _spending_view(
 
 def register() -> None:
     @ui.page("/")
-    async def dashboard_page(period: str | None = None, bank_error: str | None = None) -> None:
+    async def dashboard_page(
+        period: str | None = None,
+        counterparty: str | None = None,
+        category: str | None = None,
+        bank_error: str | None = None,
+    ) -> None:
         settings = get_settings()
         service = find_banking_service()
         error = _error_from(bank_error)
@@ -332,6 +369,8 @@ def register() -> None:
                 transactions,
                 service.today(),
                 Period.parse(period),
+                counterparty,
+                category,
                 shell,
                 band,
                 profile,

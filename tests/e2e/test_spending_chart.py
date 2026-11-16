@@ -50,4 +50,4 @@ def test_period_without_spending_shows_empty_state(
     dashboard.select_period("Last week")
 
     expect(dashboard.empty_state).to_contain_text("No spending in this period")
-    expect(dashboard.spending_chart).to_have_count(0)
+    expect(dashboard.spending_chart).to_be_hidden()

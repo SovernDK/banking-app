@@ -11,7 +11,7 @@ import httpx2
 import pytest
 
 from app.banking.store import STORE_FILENAME
-from app.categories import CATEGORIES_FILENAME
+from app.categories import CATEGORIES_FILENAME, CategoryBook, CategoryStore
 from app.tls import generate_private_key, write_private_key
 
 SERVER_START_TIMEOUT_SECONDS = 20
@@ -141,3 +141,20 @@ def fake_bank(fake_bank_url: str, app_data_dir: Path) -> Callable[..., None]:
     (app_data_dir / STORE_FILENAME).unlink(missing_ok=True)
     (app_data_dir / CATEGORIES_FILENAME).unlink(missing_ok=True)
     return configure
+
+
+@pytest.fixture
+def seed_categories(
+    fake_bank: Callable[..., None], app_data_dir: Path
+) -> Callable[[dict[str, list[str]]], None]:
+    """Stores categories, each with the counterparty names assigned to it."""
+
+    def seed(assignments: dict[str, list[str]]) -> None:
+        book = CategoryBook()
+        for name, counterparties in assignments.items():
+            category = book.create(name)
+            for counterparty in counterparties:
+                book.assign(counterparty, category.id)
+        CategoryStore(app_data_dir / CATEGORIES_FILENAME, []).save(book)
+
+    return seed
