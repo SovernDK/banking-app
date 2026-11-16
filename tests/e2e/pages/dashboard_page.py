@@ -26,11 +26,23 @@ class DashboardPage:
         self.page.keyboard.type(category)
         self.page.keyboard.press("Enter")
 
-    def open_manage_categories(self) -> None:
-        self.page.get_by_test_id("manage-categories").click()
+    def open_settings(self) -> None:
+        self.settings_button.click()
+
+    def box_toggle(self, action: str, box: str) -> Locator:
+        return self.settings_dialog.get_by_role("button", name=f'{action} "{box}"', exact=True)
+
+    def expand(self, box: str) -> None:
+        self.box_toggle("Expand", box).click()
+
+    def close_settings(self) -> None:
+        self.settings_dialog.get_by_role("button", name="Done").click()
+
+    def category_name_field(self, name: str) -> Locator:
+        return self.page.get_by_label(f"Name of {name}", exact=True)
 
     def rename_category(self, name: str, new_name: str) -> None:
-        field = self.page.get_by_label(f"Name of {name}", exact=True)
+        field = self.category_name_field(name)
         field.fill(new_name)
         field.press("Enter")
 
@@ -46,6 +58,9 @@ class DashboardPage:
     def scroll_position(self) -> int:
         return self.page.evaluate("window.scrollY")
 
+    def dialog_scroll_position(self) -> int:
+        return self.settings_dialog.evaluate("card => card.scrollTop")
+
     @property
     def payment_methods_legend(self) -> Locator:
         return self.page.get_by_role("list", name="Payment methods")
@@ -57,6 +72,18 @@ class DashboardPage:
     @property
     def counterparties(self) -> Locator:
         return self.page.get_by_test_id("counterparties")
+
+    @property
+    def settings_button(self) -> Locator:
+        return self.page.get_by_role("button", name="Settings", exact=True)
+
+    @property
+    def settings_dialog(self) -> Locator:
+        return self.page.get_by_test_id("settings-dialog")
+
+    @property
+    def categories_list(self) -> Locator:
+        return self.page.get_by_test_id("categories-list")
 
     @property
     def empty_state(self) -> Locator:

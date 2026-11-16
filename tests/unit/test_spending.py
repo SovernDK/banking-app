@@ -8,6 +8,7 @@ from app.spending import (
     DailySpending,
     Period,
     Share,
+    all_time_spending_by,
     daily_spending,
     main_currency,
     spending_by,
@@ -145,6 +146,25 @@ def test_spending_by_groups_the_period_spending_biggest_first() -> None:
     )
 
     assert shares == [Share("big", Decimal("30")), Share("small", Decimal("7"))]
+
+
+def test_all_time_spending_by_groups_every_spending_regardless_of_date() -> None:
+    transactions = [
+        _transaction("4", booking_date=TODAY),
+        _transaction("40", booking_date=date(2025, 1, 1)),
+        _transaction("6"),
+        _transaction("20", status="CNCL", booking_date=TODAY),
+        _transaction("50", indicator="CRDT", booking_date=TODAY),
+        _transaction("12", currency="PLN", booking_date=TODAY),
+    ]
+
+    shares = all_time_spending_by(
+        transactions,
+        "EUR",
+        key=lambda transaction: "big" if transaction.transaction_amount.amount > 5 else "small",
+    )
+
+    assert shares == [Share("big", Decimal("46")), Share("small", Decimal("4"))]
 
 
 @pytest.mark.parametrize(

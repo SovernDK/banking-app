@@ -78,7 +78,8 @@ sequenceDiagram
   U->>Y: GET /?period=week|month
   Y->>EB: GET /accounts/{uid}/transactions (last 30 days, cached 6 h)
   Y-->>U: KPI total + "Spending per day" bar chart
-  Y-->>U: Payment methods + Categories donuts, Counterparties table
+  Y-->>U: Payment methods + Categories donuts
+  U->>Y: ⚙ Settings (header) → Categories · Counterparties boxes
 </pre>
 <p>Spending = debits (<code>DBIT</code>) excluding cancelled/rejected, by booking → value → transaction date, in the currency with most spending. Periods are rolling 7 / 30 days ending today.</p>
 </section>
@@ -96,8 +97,12 @@ flowchart LR
   CN --> RU{Category rule?<br/>case/space-insensitive}
   RU -->|yes| CD((Categories donut))
   RU -->|no| UC[Uncategorised] --> CD
-  CT[Counterparties table<br/>select / type new name] -->|assign| RU
-  MD[Manage categories dialog<br/>rename · delete] --> RU
+  subgraph SD[Settings modal · ⚙ in header · boxes start collapsed]
+    MD[Categories box<br/>rename · delete]
+    CT[Counterparties box<br/>all-time names, select / type new name]
+  end
+  CT -->|assign| RU
+  MD --> RU
 </pre>
 <ul>
 <li>Payment methods: ATM withdrawal, Card payment, BLIK, Transfer, Direct debit, Fee, Other. Add a bank = one file in <code>app/bank_profiles/</code> + an entry in its registry (see <code>docs/adr/0001</code>).</li>
@@ -112,7 +117,7 @@ flowchart LR
 sequenceDiagram
   Browser->>FastAPI: GET /
   FastAPI->>NiceGUI: @ui.page("/") dashboard_page
-  NiceGUI->>NiceGUI: not configured → alert · not connected → empty_state + Connect · connected → period_filter, kpi_tile, chart, Donut ×2, CounterpartiesTable · category edits update Donut + table in place (no re-render, no scroll jump)
+  NiceGUI->>NiceGUI: not configured → alert · not connected → empty_state + Connect · connected → period_filter, kpi_tile, chart, Donut ×2 + ⚙ SettingsDialog (CategoryList + CounterpartiesTable) · category edits update Donut, list and table in place (no re-render, no scroll jump)
   NiceGUI->>NiceGUI: session ended → stored session cleared, "expired" alert + Connect · other bank error → "unavailable" alert, session kept
   NiceGUI-->>Browser: HTML + websocket for live updates
 </pre>
@@ -129,7 +134,7 @@ app/
   api/bank.py        Bank callback at /api/bank/callback + local redirect path (e.g. /callback)
   tls.py             python -m app.tls: self-signed localhost certificate for HTTPS
   banking/           Enable Banking client, models, store, service, error codes
-  spending.py        Period, daily spending, spending_by / top_shares (pure)
+  spending.py        Period, daily spending, spending_by / all_time_spending_by / top_shares (pure)
   payment_methods.py PaymentMethod enum
   bank_profiles/     Per-bank payment-method rules: generic (ISO codes), mock_aspsp; profile_for()
   categories.py      Category, CategoryBook (rules by counterparty name), CategoryStore
@@ -139,7 +144,7 @@ app/
     format.py        money / pct / date rendering
     components/      page_shell, overview_band, section, empty_state, chart, Donut,
                      period_filter, kpi_tile, chip, primary_button, ghost_button, alert,
-                     CounterpartiesTable, manage_categories_dialog
+                     SettingsDialog, CategoryList, CounterpartiesTable
     pages/           dashboard ("/")
 site/                Static pages (callback relay, privacy, terms), published to public repo yiji-site
 scripts/             publish-site.sh: copy site/ to the Pages repo

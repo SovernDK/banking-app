@@ -1,5 +1,5 @@
 from collections import defaultdict
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
@@ -63,16 +63,34 @@ class Share(Generic[Key]):
     amount: Decimal
 
 
+def _spending(
+    transactions: list[Transaction], currency: str
+) -> Iterator[tuple[Transaction, Decimal]]:
+    for transaction in filter(_is_spending, transactions):
+        amount = transaction.transaction_amount
+        if amount.currency == currency:
+            # Banks differ on whether debit amounts are signed; the indicator carries the direction.
+            yield transaction, abs(amount.amount)
+
+
 def _spending_in_period(
     transactions: list[Transaction], currency: str, period: Period, today: date
 ) -> Iterator[tuple[Transaction, date, Decimal]]:
     first_day = today - timedelta(days=period.days - 1)
-    for transaction in filter(_is_spending, transactions):
+    for transaction, amount in _spending(transactions, currency):
         spent_on = transaction.spent_on
-        amount = transaction.transaction_amount
-        if spent_on and first_day <= spent_on <= today and amount.currency == currency:
-            # Banks differ on whether debit amounts are signed; the indicator carries the direction.
-            yield transaction, spent_on, abs(amount.amount)
+        if spent_on and first_day <= spent_on <= today:
+            yield transaction, spent_on, amount
+
+
+def _shares(
+    spending: Iterable[tuple[Transaction, Decimal]], key: Callable[[Transaction], Key]
+) -> list[Share[Key]]:
+    totals: dict[Key, Decimal] = defaultdict(Decimal)
+    for transaction, amount in spending:
+        totals[key(transaction)] += amount
+    shares = [Share(key=group, amount=amount) for group, amount in totals.items()]
+    return sorted(shares, key=lambda share: share.amount, reverse=True)
 
 
 def daily_spending(
@@ -96,11 +114,15 @@ def spending_by(
     key: Callable[[Transaction], Key],
 ) -> list[Share[Key]]:
     """Spending per key, biggest first."""
-    totals: dict[Key, Decimal] = defaultdict(Decimal)
-    for transaction, _, amount in _spending_in_period(transactions, currency, period, today):
-        totals[key(transaction)] += amount
-    shares = [Share(key=group, amount=amount) for group, amount in totals.items()]
-    return sorted(shares, key=lambda share: share.amount, reverse=True)
+    in_period = _spending_in_period(transactions, currency, period, today)
+    return _shares(((transaction, amount) for transaction, _, amount in in_period), key)
+
+
+def all_time_spending_by(
+    transactions: list[Transaction], currency: str, key: Callable[[Transaction], Key]
+) -> list[Share[Key]]:
+    """Spending per key over every transaction, dated or not, biggest first."""
+    return _shares(_spending(transactions, currency), key)
 
 
 def top_shares(shares: list[Share[Key]], limit: int) -> tuple[list[Share[Key]], Decimal]:

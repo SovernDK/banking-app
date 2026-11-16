@@ -23,6 +23,7 @@ from app.spending import (
     DailySpending,
     Period,
     Share,
+    all_time_spending_by,
     daily_spending,
     main_currency,
     spending_by,
@@ -31,22 +32,22 @@ from app.spending import (
 from app.ui import format as fmt
 from app.ui.components import (
     CategoryEntry,
-    CounterpartiesTable,
     CounterpartyRow,
     Donut,
     DonutSlice,
+    PageShell,
+    SettingsDialog,
     alert,
     chart,
     chip,
     empty_state,
-    ghost_button,
     kpi_tile,
-    manage_categories_dialog,
     overview_band,
     page_shell,
     period_filter,
     primary_button,
     section,
+    settings_button,
 )
 
 
@@ -125,7 +126,7 @@ def _spending_view(
     transactions: list[Transaction],
     today: date,
     initial: Period,
-    dark_mode: ui.dark_mode,
+    shell: PageShell,
     band: ui.column,
     profile: BankProfile,
     store: CategoryStore,
@@ -136,6 +137,7 @@ def _spending_view(
         with band:
             empty_state("No spending in the last month.")
         return
+    dark_mode = shell.dark_mode
     spending = {period: daily_spending(transactions, currency, period, today) for period in Period}
     selected = initial
 
@@ -169,16 +171,21 @@ def _spending_view(
         category = book.category_of(counterparty)
         return category.id if category else None
 
+    def category_entries() -> list[CategoryEntry]:
+        return [
+            CategoryEntry(id=category.id, name=category.name, usage=book.usage(category.id))
+            for category in book.categories
+        ]
+
+    def category_names() -> dict[str, str]:
+        return {category.id: category.name for category in book.categories}
+
     category_donut: Donut | None = None
-    table: CounterpartiesTable | None = None
 
     def show_categories() -> None:
-        if category_donut is None or table is None:
-            return
-        category_donut.update(category_slices())
-        table.update(
-            {category.id: category.name for category in book.categories}, assigned_category
-        )
+        if category_donut is not None:
+            category_donut.update(category_slices())
+        settings.update(category_entries(), category_names(), assigned_category)
 
     async def save_and_show() -> None:
         await run.io_bound(store.save, book)
@@ -205,6 +212,7 @@ def _spending_view(
             book.rename(category_id, name)
         except (InvalidCategoryNameError, DuplicateCategoryError) as error:
             ui.notify(str(error), type="negative")
+            show_categories()
             return
         await save_and_show()
 
@@ -212,19 +220,28 @@ def _spending_view(
         book.delete(category_id)
         await save_and_show()
 
-    open_manage_dialog = manage_categories_dialog(
-        lambda: [
-            CategoryEntry(id=category.id, name=category.name, usage=book.usage(category.id))
-            for category in book.categories
+    settings = SettingsDialog(
+        category_entries(),
+        [
+            CounterpartyRow(
+                name=share.key, amount=share.amount, category_id=assigned_category(share.key)
+            )
+            for share in all_time_spending_by(transactions, currency, counterparty_name)
+            if share.key is not None
         ],
+        category_names(),
+        currency,
         rename_category,
         delete_category,
+        change_category,
     )
+    with shell.actions:
+        settings_button(settings.open)
 
     @ui.refreshable
     def breakdown() -> None:
-        nonlocal category_donut, table
-        category_donut, table = None, None
+        nonlocal category_donut
+        category_donut = None
         if not spends_in(selected):
             return
         dark = bool(dark_mode.value)
@@ -246,27 +263,6 @@ def _spending_view(
                     dark=dark,
                     testid="categories",
                 )
-        with section(
-            "Counterparties", "Pick a category for each name; it applies to all their payments"
-        ):
-            ghost_button(
-                "Manage categories", open_manage_dialog, icon="tune", testid="manage-categories"
-            )
-            names = spending_by(transactions, currency, selected, today, counterparty_name)
-            table = CounterpartiesTable(
-                [
-                    CounterpartyRow(
-                        name=share.key,
-                        amount=share.amount,
-                        category_id=assigned_category(share.key),
-                    )
-                    for share in names
-                    if share.key is not None
-                ],
-                {category.id: category.name for category in book.categories},
-                currency,
-                change_category,
-            )
 
     def select(period: Period) -> None:
         nonlocal selected
@@ -293,7 +289,7 @@ def register() -> None:
         settings = get_settings()
         service = find_banking_service()
         error = _error_from(bank_error)
-        with page_shell(settings.app_title) as dark_mode:
+        with page_shell(settings.app_title) as shell:
             with overview_band() as band:
                 with ui.row().classes("w-full items-center justify-between gap-4"):
                     ui.label("Overview").classes("text-2xl font-normal").props(
@@ -330,7 +326,7 @@ def register() -> None:
                 transactions,
                 service.today(),
                 Period.parse(period),
-                dark_mode,
+                shell,
                 band,
                 profile,
                 store,
