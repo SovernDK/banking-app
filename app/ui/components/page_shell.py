@@ -17,8 +17,10 @@ def _theme_variables(palette: Palette) -> str:
         + "".join(
             f" --yiji-category-{slot}: {colour};" for slot, colour in enumerate(palette.categories)
         )
-        + f" --q-primary: {palette.ink}; --q-positive: {palette.gain};"
-        f" --q-negative: {palette.loss}; --q-warning: {palette.warning};"
+        # Quasar writes its brand colours inline on <body> at startup; only !important lets
+        # these theme values, and so their dark-mode versions, win over that inline style.
+        + f" --q-primary: {palette.ink} !important; --q-positive: {palette.gain} !important;"
+        f" --q-negative: {palette.loss} !important; --q-warning: {palette.warning} !important;"
     )
 
 
@@ -62,7 +64,6 @@ class PageShell:
 
 @contextmanager
 def page_shell(title: str) -> Iterator[PageShell]:
-    ui.colors(primary=LIGHT.ink, positive=LIGHT.gain, negative=LIGHT.loss, warning=LIGHT.warning)
     ui.add_css(THEME_CSS)
     dark_mode = ui.dark_mode()
     with ui.header().classes("yiji-top-bar items-center justify-between px-6 py-3"):

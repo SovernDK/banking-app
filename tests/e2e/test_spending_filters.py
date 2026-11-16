@@ -174,3 +174,14 @@ def test_category_edit_under_a_category_filter_keeps_the_page_scroll(
     dashboard.close_settings()
 
     assert dashboard.scroll_position() == scrolled_to
+
+
+def test_selected_option_is_drawn_in_dark_ink_in_dark_mode(dashboard: DashboardPage) -> None:
+    """Quasar's primary colour stayed light-theme ink in dark mode, hiding the selected option."""
+    dashboard.filter_by_category("Groceries")
+    dashboard.dark_mode_toggle.click()
+
+    dashboard.category_filter.click()
+
+    selected = dashboard.page.get_by_role("option", name="Groceries", exact=True)
+    expect(selected).to_have_css("color", "rgb(246, 247, 237)")
