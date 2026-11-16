@@ -31,11 +31,29 @@ def dashboard(page: Page, fake_bank: Callable[..., None]) -> DashboardPage:
     return dashboard
 
 
-def test_spending_is_split_by_payment_method(dashboard: DashboardPage) -> None:
-    legend = dashboard.payment_methods_legend
+def test_spending_is_split_by_counterparty(dashboard: DashboardPage) -> None:
+    legend = dashboard.counterparties_legend
 
+    expect(dashboard.legend_entry(legend, "Biedronka")).to_contain_text("42.00 EUR")
+    expect(dashboard.legend_entry(legend, "Landlord")).to_contain_text("25.00 EUR")
     expect(dashboard.legend_entry(legend, "ATM withdrawal")).to_contain_text("100.00 EUR")
-    expect(dashboard.legend_entry(legend, "Transfer")).to_contain_text("67.00 EUR")
+
+
+def test_counterparties_beyond_the_biggest_six_are_grouped_as_other(
+    page: Page, fake_bank: Callable[..., None]
+) -> None:
+    fake_bank(
+        transactions=[
+            debit(str(10 + rank), _days_ago(1), creditor=f"Shop {rank}") for rank in range(8)
+        ]
+    )
+    dashboard = DashboardPage(page)
+    dashboard.open()
+    dashboard.connect_bank()
+
+    legend = dashboard.counterparties_legend
+    expect(legend.get_by_role("listitem")).to_have_count(7)
+    expect(dashboard.legend_entry(legend, "Other")).to_contain_text("21.00 EUR")
 
 
 def test_new_spending_is_uncategorised(dashboard: DashboardPage) -> None:
@@ -64,5 +82,5 @@ def test_period_without_spending_shows_no_breakdown(
     dashboard.select_period("Last week")
 
     expect(dashboard.empty_state).to_have_text("No spending in this period.")
-    expect(dashboard.payment_methods_legend).to_have_count(0)
+    expect(dashboard.counterparties_legend).to_have_count(0)
     expect(dashboard.categories_legend).to_have_count(0)

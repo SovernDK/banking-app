@@ -11,6 +11,7 @@ from app.spending import (
     all_time_spending_by,
     daily_spending,
     main_currency,
+    merge_spellings,
     spending_by,
     top_shares,
 )
@@ -184,3 +185,17 @@ def test_top_shares_folds_what_does_not_fit_into_one_rest_total(
 
     assert [share.amount for share in top] == kept
     assert other == rest
+
+
+def test_merge_spellings_joins_names_differing_only_in_case_under_the_biggest_spelling() -> None:
+    shares = [
+        Share("Biedronka", Decimal("40")),
+        Share("Netflix", Decimal("15")),
+        Share("BIEDRONKA", Decimal("30")),
+        Share("biedronka", Decimal("2")),
+    ]
+
+    assert merge_spellings(shares) == [
+        Share("Biedronka", Decimal("72")),
+        Share("Netflix", Decimal("15")),
+    ]

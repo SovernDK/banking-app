@@ -62,8 +62,8 @@ class DashboardPage:
         return self.settings_dialog.evaluate("card => card.scrollTop")
 
     @property
-    def payment_methods_legend(self) -> Locator:
-        return self.page.get_by_role("list", name="Payment methods")
+    def counterparties_legend(self) -> Locator:
+        return self.page.get_by_role("list", name="Counterparties")
 
     @property
     def categories_legend(self) -> Locator:

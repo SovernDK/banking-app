@@ -4,7 +4,7 @@ from typing import Any
 
 from nicegui import run, ui
 
-from app.bank_profiles import BankProfile, profile_for
+from app.bank_profiles import BankProfile, profile_for, transaction_name
 from app.banking.client import BankApiError, BankSessionExpiredError
 from app.banking.errors import BankErrorCode
 from app.banking.models import Transaction
@@ -18,7 +18,6 @@ from app.categories import (
     counterparty_name,
 )
 from app.config import get_settings
-from app.payment_methods import PaymentMethod
 from app.spending import (
     DailySpending,
     Period,
@@ -26,6 +25,7 @@ from app.spending import (
     all_time_spending_by,
     daily_spending,
     main_currency,
+    merge_spellings,
     spending_by,
     top_shares,
 )
@@ -89,17 +89,15 @@ def _spending_option(days: list[DailySpending], currency: str) -> dict[str, Any]
 CHART_SLICE_LIMIT = 7
 
 
-def _payment_method_slices(shares: list[Share[PaymentMethod]]) -> list[DonutSlice]:
-    order = list(PaymentMethod)
-    return [
-        DonutSlice(
-            label=share.key,
-            amount=share.amount,
-            colour_slot=None if share.key is PaymentMethod.OTHER else order.index(share.key),
-            hatched=share.key is PaymentMethod.OTHER,
-        )
-        for share in shares
+def _counterparty_slices(shares: list[Share[str]]) -> list[DonutSlice]:
+    kept, rest = top_shares(shares, CHART_SLICE_LIMIT)
+    slices = [
+        DonutSlice(label=share.key, amount=share.amount, colour_slot=rank)
+        for rank, share in enumerate(kept)
     ]
+    if rest:
+        slices.append(DonutSlice(label="Other", amount=rest, hatched=True))
+    return slices
 
 
 def _category_slices(shares: list[Share[str | None]], book: CategoryBook) -> list[DonutSlice]:
@@ -246,14 +244,22 @@ def _spending_view(
             return
         dark = bool(dark_mode.value)
         with ui.grid().classes("w-full grid-cols-1 md:grid-cols-2 gap-4"):
-            with section("Payment methods", currency):
-                profile_shares = spending_by(transactions, currency, selected, today, profile)
+            with section("Counterparties", currency):
+                counterparty_shares = merge_spellings(
+                    spending_by(
+                        transactions,
+                        currency,
+                        selected,
+                        today,
+                        lambda transaction: transaction_name(transaction, profile),
+                    )
+                )
                 Donut(
-                    _payment_method_slices(profile_shares),
+                    _counterparty_slices(counterparty_shares),
                     currency,
-                    legend_label="Payment methods",
+                    legend_label="Counterparties",
                     dark=dark,
-                    testid="payment-methods",
+                    testid="counterparty-donut",
                 )
             with section("Categories", currency):
                 category_donut = Donut(

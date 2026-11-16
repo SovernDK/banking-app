@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from app.bank_profiles import generic, mock_aspsp, profile_for
+from app.bank_profiles import generic, mock_aspsp, profile_for, transaction_name
 from app.banking.models import Transaction
 from app.payment_methods import PaymentMethod
 from tests.fakes.enable_banking import debit
@@ -59,6 +59,21 @@ def test_mock_aspsp_payment_without_creditor_or_code_is_other() -> None:
 def test_profile_is_chosen_by_bank_name_and_country() -> None:
     assert profile_for("Mock ASPSP", "FI") is mock_aspsp.payment_method
     assert profile_for("mock aspsp", "FI") is mock_aspsp.payment_method
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ({"creditor": "  Netflix   Inc ", "family": "CCRD", "sub_family": "POSD"}, "Netflix Inc"),
+        ({"remittance": ["Spotify Premium"]}, "Spotify Premium"),
+        ({"family": "CCRD", "sub_family": "CWDL"}, "ATM withdrawal"),
+        ({}, "Other"),
+    ],
+)
+def test_transaction_is_named_after_its_counterparty_else_its_payment_method(
+    fields: dict[str, Any], expected: str
+) -> None:
+    assert transaction_name(_debit(**fields), generic.payment_method) == expected
 
 
 @pytest.mark.parametrize(("name", "country"), [("Mock ASPSP", "SE"), ("PKO BP", "PL")])

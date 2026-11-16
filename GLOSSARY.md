@@ -29,6 +29,8 @@ _Avoid_: Tag, label, type
 Who the money went to: the creditor's name, or the first line of the payment description when the bank gives no creditor. Two names are the same when they differ only in letter case or spacing.
 _Avoid_: Merchant, payee
 
+Spending with no counterparty name (a cash withdrawal, say) goes by its payment method in the Counterparties donut.
+
 **Category rule**:
 A link from one counterparty name to one category; it applies to all past and future spending with that name.
 _Avoid_: Assignment, mapping

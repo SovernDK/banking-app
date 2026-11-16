@@ -131,3 +131,18 @@ def top_shares(shares: list[Share[Key]], limit: int) -> tuple[list[Share[Key]], 
         return shares, Decimal(0)
     kept = shares[: limit - 1]
     return kept, sum((share.amount for share in shares[limit - 1 :]), Decimal(0))
+
+
+def merge_spellings(shares: list[Share[str]]) -> list[Share[str]]:
+    """Joins names that differ only in case, labelled by the spelling with the most spending."""
+    spellings: dict[str, list[Share[str]]] = defaultdict(list)
+    for share in shares:
+        spellings[share.key.casefold()].append(share)
+    merged = [
+        Share(
+            key=max(group, key=lambda share: share.amount).key,
+            amount=sum((share.amount for share in group), Decimal(0)),
+        )
+        for group in spellings.values()
+    ]
+    return sorted(merged, key=lambda share: share.amount, reverse=True)

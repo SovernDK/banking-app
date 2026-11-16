@@ -78,7 +78,7 @@ sequenceDiagram
   U->>Y: GET /?period=week|month
   Y->>EB: GET /accounts/{uid}/transactions (last 30 days, cached 6 h)
   Y-->>U: KPI total + "Spending per day" bar chart
-  Y-->>U: Payment methods + Categories donuts
+  Y-->>U: Counterparties + Categories donuts
   U->>Y: ⚙ Settings (header) → Categories · Counterparties boxes
 </pre>
 <p>Spending = debits (<code>DBIT</code>) excluding cancelled/rejected, by booking → value → transaction date, in the currency with most spending. Periods are rolling 7 / 30 days ending today.</p>
@@ -91,9 +91,12 @@ flowchart LR
   T[Spending in period<br/>main currency] --> PF["profile_for(ASPSP name, country)"]
   PF -->|Mock ASPSP / FI| MA[mock_aspsp: ISO codes, else creditor → Transfer]
   PF -->|any other bank| GE[generic: ISO bank transaction code, else Other]
-  MA --> PM((Payment methods donut))
-  GE --> PM
   T --> CN["Counterparty name<br/>creditor, else 1st remittance line"]
+  CN -->|named| PY["Counterparty donut key<br/>spellings differing in case merged"]
+  CN -->|nameless| PF
+  MA -->|payment method, e.g. ATM withdrawal| PY
+  GE -->|payment method| PY
+  PY --> PD((Counterparties donut))
   CN --> RU{Category rule?<br/>case/space-insensitive}
   RU -->|yes| CD((Categories donut))
   RU -->|no| UC[Uncategorised] --> CD
@@ -105,9 +108,9 @@ flowchart LR
   MD --> RU
 </pre>
 <ul>
-<li>Payment methods: ATM withdrawal, Card payment, BLIK, Transfer, Direct debit, Fee, Other. Add a bank = one file in <code>app/bank_profiles/</code> + an entry in its registry (see <code>docs/adr/0001</code>).</li>
+<li>Counterparties donut: who was paid, so recurring charges (subscriptions, rent) show what eats the most money. A nameless payment goes by its payment method: ATM withdrawal, Card payment, BLIK, Transfer, Direct debit, Fee, Other. Add a bank = one file in <code>app/bank_profiles/</code> + an entry in its registry (see <code>docs/adr/0001</code>).</li>
 <li>Categories are user-created (seeded from <code>YIJI_STARTER_CATEGORIES</code> on first run); deleting one makes its names Uncategorised. A category gets a palette colour when first used and keeps it.</li>
-<li>Donuts show at most 7 slices: 6 biggest categories + hatched "Other" + grey "Uncategorised". Terms: <code>GLOSSARY.md</code>.</li>
+<li>Donuts show at most 7 slices: Counterparties = 6 biggest + hatched "Other"; Categories = 6 biggest + hatched "Other" + grey "Uncategorised". Terms: <code>GLOSSARY.md</code>.</li>
 </ul>
 </section>
 
@@ -134,9 +137,9 @@ app/
   api/bank.py        Bank callback at /api/bank/callback + local redirect path (e.g. /callback)
   tls.py             python -m app.tls: self-signed localhost certificate for HTTPS
   banking/           Enable Banking client, models, store, service, error codes
-  spending.py        Period, daily spending, spending_by / all_time_spending_by / top_shares (pure)
+  spending.py        Period, daily spending, spending_by / all_time_spending_by / top_shares / merge_spellings (pure)
   payment_methods.py PaymentMethod enum
-  bank_profiles/     Per-bank payment-method rules: generic (ISO codes), mock_aspsp; profile_for()
+  bank_profiles/     Per-bank payment-method rules: generic (ISO codes), mock_aspsp; profile_for(), transaction_name()
   categories.py      Category, CategoryBook (rules by counterparty name), CategoryStore
   json_file.py       Atomic JSON write shared by the stores
   ui/
