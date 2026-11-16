@@ -99,7 +99,7 @@ def test_clear_filters_shows_all_spending_again(dashboard: DashboardPage) -> Non
     expect(dashboard.total_label).to_have_text("Spent, last month")
     expect(dashboard.category_filter).to_have_value("All")
     expect(dashboard.clear_filters_button).to_be_disabled()
-    expect(dashboard.page).to_have_url(re.compile(r"/\?period=month$"))
+    expect(dashboard.page).to_have_url(re.compile(r"/\?period=month&compare=m2m$"))
 
 
 def test_filter_survives_a_period_change_and_can_leave_it_empty(

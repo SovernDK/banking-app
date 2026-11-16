@@ -1,3 +1,4 @@
+import calendar
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
@@ -34,6 +35,57 @@ Key = TypeVar("Key")
 _PERIOD_DAYS = {Period.LAST_WEEK: 7, Period.LAST_MONTH: 30}
 _PERIOD_LABELS = {Period.LAST_WEEK: "Last week", Period.LAST_MONTH: "Last month"}
 LONGEST_PERIOD = max(Period, key=lambda period: period.days)
+
+
+def _months_back(day: date, months: int) -> date:
+    month_index = day.year * 12 + day.month - 1 - months
+    year, month = divmod(month_index, 12)
+    last_day = calendar.monthrange(year, month + 1)[1]
+    return date(year, month + 1, min(day.day, last_day))
+
+
+class Comparison(StrEnum):
+    """What the current period is compared with: the same days a month or a year earlier."""
+
+    MONTH = "m2m"
+    YEAR = "y2y"
+
+    @property
+    def label(self) -> str:
+        return _COMPARISON_LABELS[self]
+
+    @property
+    def ago(self) -> str:
+        return _COMPARISON_AGO[self]
+
+    def shift(self, day: date) -> date:
+        """The same day back in time; a day the target month lacks becomes its last day."""
+        return _months_back(day, _COMPARISON_MONTHS[self])
+
+    @classmethod
+    def parse(cls, value: str | None) -> "Comparison":
+        try:
+            return cls(value)
+        except ValueError:
+            return cls.MONTH
+
+
+_COMPARISON_MONTHS = {Comparison.MONTH: 1, Comparison.YEAR: 12}
+_COMPARISON_LABELS = {Comparison.MONTH: "M2M", Comparison.YEAR: "Y2Y"}
+_COMPARISON_AGO = {Comparison.MONTH: "a month ago", Comparison.YEAR: "a year ago"}
+
+
+def history_start(today: date) -> date:
+    """The earliest day any period or its comparison can show."""
+    earliest_end = min(comparison.shift(today) for comparison in Comparison)
+    return earliest_end - timedelta(days=LONGEST_PERIOD.days - 1)
+
+
+def change(current: Decimal, previous: Decimal) -> Decimal | None:
+    """Relative change from `previous`; None when there was nothing to compare with."""
+    if previous == 0:
+        return None
+    return (current - previous) / previous
 
 
 @dataclass(frozen=True)

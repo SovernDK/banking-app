@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 
 STORE_FILENAME = "bank.json"
 
-# Bump whenever Transaction keeps more bank fields: rows cached by an older model lack them and
-# would stay incomplete until the refresh window ran out.
-TRANSACTIONS_CACHE_VERSION = 1
+# Bump whenever the cache would be incomplete for the current app (Transaction keeps more bank
+# fields, or history reaches further back); otherwise it stays so until the refresh window ends.
+TRANSACTIONS_CACHE_VERSION = 2
 
 
 class StoredSession(BaseModel):

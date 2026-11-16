@@ -1,4 +1,3 @@
-import math
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -6,7 +5,7 @@ from typing import Any
 from nicegui import ui
 
 from app.ui import format as fmt
-from app.ui.components.chart import chart
+from app.ui.components.chart import chart, hatch_decal
 from app.ui.palette import DARK, LIGHT, Palette
 
 
@@ -26,16 +25,6 @@ def _colour(entry: DonutSlice, palette: Palette) -> str:
     return palette.categories[entry.colour_slot % len(palette.categories)]
 
 
-def _hatch(palette: Palette) -> dict[str, Any]:
-    return {
-        "symbol": "rect",
-        "color": palette.card,
-        "dashArrayX": [1, 0],
-        "dashArrayY": [2, 4],
-        "rotation": -math.pi / 4,
-    }
-
-
 def _swatch_style(entry: DonutSlice, palette: Palette) -> str:
     colour = _colour(entry, palette)
     if not entry.hatched:
@@ -50,7 +39,7 @@ def _slice_data(slices: list[DonutSlice], palette: Palette) -> list[dict[str, An
             "value": float(entry.amount),
             "itemStyle": {
                 "color": _colour(entry, palette),
-                **({"decal": _hatch(palette)} if entry.hatched else {}),
+                **({"decal": hatch_decal(palette)} if entry.hatched else {}),
             },
         }
         for entry in slices

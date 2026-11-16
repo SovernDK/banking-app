@@ -45,6 +45,8 @@ class FakeBankConfig(BaseModel):
     deny_access: bool = False
     session_expired: bool = False
     failure_status: int | None = None
+    history_from: str | None = None
+    """Earliest `date_from` the bank serves; older requests are refused, as banks limit history."""
 
 
 class FakeBankState(FakeBankConfig):
@@ -98,6 +100,12 @@ def create_fake_enable_banking() -> FastAPI:
             return JSONResponse(
                 {"code": 401, "message": "Session expired", "error": "EXPIRED_SESSION"},
                 status_code=401,
+            )
+        history_from = bank().history_from
+        if history_from and date_from < history_from:
+            return JSONResponse(
+                {"code": 422, "message": "Too old", "error": "WRONG_TRANSACTIONS_PERIOD"},
+                status_code=422,
             )
         start = int(continuation_key or 0)
         end = start + bank().page_size

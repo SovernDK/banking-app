@@ -19,6 +19,7 @@ from app.categories import (
 )
 from app.config import get_settings
 from app.spending import (
+    Comparison,
     Period,
     Share,
     all_time_spending_by,
@@ -41,6 +42,7 @@ from app.ui.components import (
     SpendingOverview,
     alert,
     chip,
+    comparison_filter,
     empty_state,
     overview_band,
     page_shell,
@@ -108,6 +110,7 @@ def _spending_view(
     transactions: list[Transaction],
     today: date,
     initial: Period,
+    initial_comparison: Comparison,
     counterparty_query: str | None,
     category_query: str | None,
     shell: PageShell,
@@ -124,6 +127,7 @@ def _spending_view(
     dark_mode = shell.dark_mode
     spending = {period: daily_spending(transactions, currency, period, today) for period in Period}
     selected = initial
+    comparison = initial_comparison
 
     def spends_in(period: Period) -> bool:
         return any(entry.amount for entry in spending[period])
@@ -132,7 +136,9 @@ def _spending_view(
     spending_filter = SpendingFilter.parse(counterparty_query, category_query, counterparties, book)
 
     def show_url() -> None:
-        query = urlencode({"period": selected.value, **spending_filter.query()})
+        query = urlencode(
+            {"period": selected.value, **spending_filter.query(), "compare": comparison.value}
+        )
         # Settings callbacks run inside dialogs that may already be gone; the band outlives them
         # and tells NiceGUI which browser to send the URL to.
         with band:
@@ -154,7 +160,10 @@ def _spending_view(
             if spending_filter.matches(transaction, profile, book)
         ]
         spending_overview.show(
-            daily_spending(matching, currency, selected, today), overview_label()
+            daily_spending(matching, currency, selected, today),
+            daily_spending(matching, currency, selected, comparison.shift(today)),
+            overview_label(),
+            comparison,
         )
 
     @ui.refreshable
@@ -301,6 +310,12 @@ def _spending_view(
         show_overview()
         breakdown.refresh()
 
+    def compare(value: Comparison) -> None:
+        nonlocal comparison
+        comparison = value
+        show_url()
+        show_overview()
+
     def choose(value: SpendingFilter) -> None:
         nonlocal spending_filter
         spending_filter = value
@@ -310,6 +325,7 @@ def _spending_view(
     with band:
         with ui.row().classes("w-full items-center gap-4"):
             period_filter(initial, select)
+            comparison_filter(comparison, compare)
             filters = SpendingFilters(counterparties, category_options(), spending_filter, choose)
         overview()
     breakdown()
@@ -325,6 +341,7 @@ def register() -> None:
     @ui.page("/")
     async def dashboard_page(
         period: str | None = None,
+        compare: str | None = None,
         counterparty: str | None = None,
         category: str | None = None,
         bank_error: str | None = None,
@@ -369,6 +386,7 @@ def register() -> None:
                 transactions,
                 service.today(),
                 Period.parse(period),
+                Comparison.parse(compare),
                 counterparty,
                 category,
                 shell,

@@ -1,8 +1,20 @@
+import math
 from typing import Any
 
 from nicegui import ui
 
-from app.ui.palette import DARK, FONT_FAMILY, LIGHT
+from app.ui.palette import DARK, FONT_FAMILY, LIGHT, Palette
+
+
+def hatch_decal(palette: Palette) -> dict[str, Any]:
+    """Diagonal card-coloured stripes over a mark's own colour, for "Other" and comparisons."""
+    return {
+        "symbol": "rect",
+        "color": palette.card,
+        "dashArrayX": [1, 0],
+        "dashArrayY": [2, 4],
+        "rotation": -math.pi / 4,
+    }
 
 
 def chart(option: dict[str, Any], *, dark: bool, testid: str) -> ui.echart:

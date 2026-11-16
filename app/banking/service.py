@@ -5,12 +5,16 @@ from functools import lru_cache
 
 import httpx2
 
-from app.banking.client import BankSessionExpiredError, EnableBankingClient
+from app.banking.client import (
+    BankRequestRejectedError,
+    BankSessionExpiredError,
+    EnableBankingClient,
+)
 from app.banking.models import Transaction
 from app.banking.state import new_state, nonce_of
 from app.banking.store import STORE_FILENAME, BankStore, StoredSession, StoredState
 from app.config import MissingCredentialsError, Settings, get_settings
-from app.spending import LONGEST_PERIOD
+from app.spending import LONGEST_PERIOD, history_start
 
 
 class InvalidStateError(Exception):
@@ -82,12 +86,11 @@ class BankingService:
         refresh_after = timedelta(minutes=self._settings.transactions_refresh_minutes)
         if stored.has_fresh_cache(self._now(), refresh_after):
             return stored.transactions
-        date_from = self.today() - timedelta(days=LONGEST_PERIOD.days - 1)
         try:
             transactions = [
                 transaction
                 for account_uid in session.account_uids
-                for transaction in self._client.fetch_transactions(account_uid, date_from)
+                for transaction in self._history(account_uid)
             ]
         except BankSessionExpiredError:
             stored.replace_session(None)
@@ -96,6 +99,25 @@ class BankingService:
         stored.cache_transactions(transactions, self._now())
         self._store.save(stored)
         return transactions
+
+    def _history(self, account_uid: str) -> list[Transaction]:
+        """As much history as the bank serves. Banks cap how far back they go (often 90 days),
+        so a refused range is retried shorter; days the bank won't give count as no spending."""
+        today = self.today()
+        fallback_days = self._settings.transactions_fallback_history_days
+        oldest_first = sorted(
+            {
+                history_start(today),
+                today - timedelta(days=fallback_days - 1),
+                today - timedelta(days=LONGEST_PERIOD.days - 1),
+            }
+        )
+        for date_from in oldest_first[:-1]:
+            try:
+                return self._client.fetch_transactions(account_uid, date_from)
+            except BankRequestRejectedError:
+                continue
+        return self._client.fetch_transactions(account_uid, oldest_first[-1])
 
 
 @lru_cache

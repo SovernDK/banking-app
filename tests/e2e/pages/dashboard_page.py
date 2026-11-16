@@ -1,3 +1,5 @@
+import re
+
 from playwright.sync_api import Locator, Page
 
 
@@ -51,6 +53,9 @@ class DashboardPage:
 
     def confirm_delete(self) -> None:
         self.page.get_by_test_id("confirm-delete").click()
+
+    def select_comparison(self, label: str) -> None:
+        self.comparison_filter.get_by_role("button", name=label).click()
 
     def search_counterparties(self, text: str) -> None:
         self.counterparty_filter.click()
@@ -131,6 +136,18 @@ class DashboardPage:
     @property
     def total_label(self) -> Locator:
         return self.page.get_by_test_id("total-label")
+
+    @property
+    def total_delta(self) -> Locator:
+        return self.page.get_by_test_id("total-delta")
+
+    @property
+    def comparison_filter(self) -> Locator:
+        return self.page.get_by_test_id("comparison-filter")
+
+    @property
+    def spending_heading(self) -> Locator:
+        return self.page.get_by_role("heading", name=re.compile(r"^Spending per day"))
 
     @property
     def counterparty_filter(self) -> Locator:

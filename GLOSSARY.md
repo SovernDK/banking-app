@@ -11,6 +11,10 @@ _Avoid_: Expenses, outgoings
 **Main currency**:
 The currency with the most spending; charts show only spending in it.
 
+**Comparison**:
+The same number of days as the selected period, ending one month (M2M) or one year (Y2Y) before today; always shown, hatched beside the current bars. Days the bank gave no history for count as no spending.
+_Avoid_: Previous period, baseline
+
 ## Breakdowns
 
 **Payment method**:

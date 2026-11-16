@@ -75,13 +75,13 @@ sequenceDiagram
   Y->>Y: check nonce (single use)
   Y->>EB: POST /sessions {code}
   Y-->>U: 303 → / (or /?bank_error=code)
-  U->>Y: GET /?period=week|month[&counterparty=name | &category=id]
-  Y->>EB: GET /accounts/{uid}/transactions (last 30 days, cached 6 h)
+  U->>Y: GET /?period=week|month[&counterparty=name | &category=id]&compare=m2m|y2y
+  Y->>EB: GET /accounts/{uid}/transactions (13 months; refused → 90, then 30 days; cached 6 h)
   Y-->>U: KPI total + "Spending per day" bar chart
   Y-->>U: Counterparties + Categories donuts
   U->>Y: ⚙ Settings (header) → Categories · Counterparties boxes
 </pre>
-<p>Spending = debits (<code>DBIT</code>) excluding cancelled/rejected, by booking → value → transaction date, in the currency with most spending. Periods are rolling 7 / 30 days ending today.</p>
+<p>Spending = debits (<code>DBIT</code>) excluding cancelled/rejected, by booking → value → transaction date, in the currency with most spending. Periods are rolling 7 / 30 days ending today. Comparison: the same number of days ending one month (M2M) or one year (Y2Y) earlier, a missing day in a shorter month becomes its last day; days the bank gave no history for count as 0.</p>
 </section>
 
 <section>
@@ -119,6 +119,7 @@ flowchart LR
 <pre class="mermaid">
 flowchart LR
   P[Period toggle<br/>week · month] --> O
+  C[Comparison toggle<br/>M2M · Y2Y, always on] -->|hatched bars + delta| O
   CP["Counterparty select<br/>all-time names, searchable"] -->|resets Category| F{SpendingFilter<br/>one at a time}
   CA["Category select<br/>colour swatches + Uncategorised"] -->|resets Counterparty| F
   CL[Clear filters<br/>disabled when All] --> F
@@ -129,7 +130,7 @@ flowchart LR
 </pre>
 <ul>
 <li>Counterparty matching uses the Counterparties donut's names (case-insensitive, nameless → payment method); category matching uses the category rules. The donuts ignore the filter.</li>
-<li>Total label: "Spent on &lt;name&gt;, last month". Nothing in range → "No spending in this period." with the filter kept.</li>
+<li>Total label: "Spent on &lt;name&gt;, last month"; under it "▲ +12.0% vs 100.00 EUR a month ago" (more spending = loss colour, less = gain, no history = muted, no %). The filter narrows both periods. Nothing in range → "No spending in this period." with the filter kept.</li>
 <li>Logic: <code>app/spending_filter.py</code> (pure). UI: <code>SpendingFilters</code> + <code>SpendingOverview</code>, both updated in place.</li>
 </ul>
 </section>
@@ -140,7 +141,7 @@ flowchart LR
 sequenceDiagram
   Browser->>FastAPI: GET /
   FastAPI->>NiceGUI: @ui.page("/") dashboard_page
-  NiceGUI->>NiceGUI: not configured → alert · not connected → empty_state + Connect · connected → period_filter, SpendingFilters, SpendingOverview, Donut ×2 + ⚙ SettingsDialog (CategoryList + CounterpartiesTable) · category edits update Donut, filters, overview, list and table in place (no re-render, no scroll jump)
+  NiceGUI->>NiceGUI: not configured → alert · not connected → empty_state + Connect · connected → period_filter, comparison_filter, SpendingFilters, SpendingOverview, Donut ×2 + ⚙ SettingsDialog (CategoryList + CounterpartiesTable) · category edits update Donut, filters, overview, list and table in place (no re-render, no scroll jump)
   NiceGUI->>NiceGUI: session ended → stored session cleared, "expired" alert + Connect · other bank error → "unavailable" alert, session kept
   NiceGUI-->>Browser: HTML + websocket for live updates
 </pre>
@@ -157,7 +158,7 @@ app/
   api/bank.py        Bank callback at /api/bank/callback + local redirect path (e.g. /callback)
   tls.py             python -m app.tls: self-signed localhost certificate for HTTPS
   banking/           Enable Banking client, models, store, service, error codes
-  spending.py        Period, daily spending, spending_by / all_time_spending_by / top_shares / merge_spellings (pure)
+  spending.py        Period, Comparison (M2M/Y2Y shift), history_start, change, daily spending, spending_by / all_time_spending_by / top_shares / merge_spellings (pure)
   payment_methods.py PaymentMethod enum
   bank_profiles/     Per-bank payment-method rules: generic (ISO codes), mock_aspsp; profile_for(), transaction_name()
   categories.py      Category, CategoryBook (rules by counterparty name), CategoryStore
@@ -225,6 +226,7 @@ uv run pytest -m sandbox                  # live: real sandbox app from .env</pr
 <tr><td><code>YIJI_ENABLE_BANKING_CONSENT_DAYS</code></td><td>90</td><td>Requested access length (1–180)</td></tr>
 <tr><td><code>YIJI_ENABLE_BANKING_TIMEOUT_SECONDS</code></td><td>30</td><td>HTTP timeout</td></tr>
 <tr><td><code>YIJI_TRANSACTIONS_REFRESH_MINUTES</code></td><td>360</td><td>Cache lifetime; PSD2 limits background fetches to ~4/day</td></tr>
+<tr><td><code>YIJI_TRANSACTIONS_FALLBACK_HISTORY_DAYS</code></td><td>90</td><td>History asked for when the bank refuses 13 months (min 30)</td></tr>
 <tr><td><code>YIJI_STARTER_CATEGORIES</code></td><td>Groceries, Eating out, Transport, Housing, Shopping, Health, Entertainment</td><td>JSON list seeded once when no categories file exists; names 1–40 chars</td></tr>
 <tr><td><code>ENABLE_BANKING_APP_ID</code></td><td>—</td><td>Enable Banking application ID (production)</td></tr>
 <tr><td><code>ENABLE_BANKING_KEY_PATH</code></td><td>—</td><td>Private key file; relative paths resolve from the project root; must be an unencrypted RSA PEM key (checked at startup)</td></tr>

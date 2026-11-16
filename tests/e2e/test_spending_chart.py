@@ -30,7 +30,7 @@ def test_switching_period_updates_spending(connected_dashboard: DashboardPage) -
     connected_dashboard.select_period("Last week")
 
     expect(connected_dashboard.total).to_have_text("10.00 EUR")
-    expect(connected_dashboard.page).to_have_url("/?period=week", ignore_case=True)
+    expect(connected_dashboard.page).to_have_url("/?period=week&compare=m2m", ignore_case=True)
 
 
 def test_period_is_restored_from_url(connected_dashboard: DashboardPage) -> None:

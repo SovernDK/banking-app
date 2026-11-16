@@ -22,6 +22,10 @@ class BankSessionExpiredError(BankApiError):
     pass
 
 
+class BankRequestRejectedError(BankApiError):
+    """The bank answered and refused the request, as opposed to being unreachable."""
+
+
 def _error_code(response: httpx2.Response) -> str:
     """Enable Banking error code, e.g. EXPIRED_SESSION; empty when the body has none."""
     try:
@@ -94,7 +98,9 @@ class EnableBankingClient:
         if response.is_error and "SESSION" in _error_code(response):
             raise BankSessionExpiredError("The bank connection has expired.")
         if response.is_error:
-            raise BankApiError(f"The bank service returned an error ({response.status_code}).")
+            raise BankRequestRejectedError(
+                f"The bank service returned an error ({response.status_code})."
+            )
         try:
             return response_model.model_validate_json(response.content)
         except ValidationError as error:

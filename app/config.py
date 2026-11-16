@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     enable_banking_consent_days: int = Field(default=90, ge=1, le=180)
     enable_banking_timeout_seconds: float = Field(default=30, gt=0)
     transactions_refresh_minutes: int = Field(default=360, ge=1)
+    transactions_fallback_history_days: int = Field(
+        default=90,
+        ge=30,
+        description="History asked for when the bank refuses a year; PSD2 banks often cap at 90.",
+    )
     starter_categories: list[CategoryName] = [
         "Groceries",
         "Eating out",

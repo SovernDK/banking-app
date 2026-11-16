@@ -119,14 +119,29 @@ def test_cache_written_before_transactions_kept_counterparties_is_refetched(
     assert cached.creditor is not None and cached.creditor.name == "Ella Korhonen"
 
 
-def test_fetches_the_longest_filter_period(
+def test_fetches_history_for_the_longest_period_a_year_ago(
     service: BankingService, fake_bank: FakeBankState
 ) -> None:
     _connect(service)
 
     service.transactions()
 
-    assert fake_bank.requests[-1].query_params["date_from"] == "2026-10-17"
+    assert fake_bank.requests[-1].query_params["date_from"] == "2025-10-17"
+
+
+@pytest.mark.parametrize(
+    ("history_from", "served_from"),
+    [("2026-08-01", "2026-08-18"), ("2026-10-01", "2026-10-17")],
+)
+def test_bank_refusing_long_history_is_asked_for_shorter_ranges(
+    service: BankingService, fake_bank: FakeBankState, history_from: str, served_from: str
+) -> None:
+    _connect(service)
+    fake_bank.history_from = history_from
+    fake_bank.transactions = [debit("5", date(2026, 11, 14))]
+
+    assert len(service.transactions()) == 1
+    assert fake_bank.requests[-1].query_params["date_from"] == served_from
 
 
 def test_keeps_the_fields_breakdowns_need_across_the_stored_cache(
