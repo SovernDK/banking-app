@@ -48,13 +48,14 @@ flowchart LR
   SV --> RC[ExchangeRateClient<br/>app/rates]
   RC --> FR[(api.frankfurter.dev<br/>ECB daily rates)]
   SY[python -m app.sync<br/>systemd timer 00:00] --> SV
+  BK[python -m app.backup<br/>after each sync] --> HS
   N --> CAT[categories.py<br/>CategoryBook + rules]
   CAT --> CS[(CategoryStore<br/>.yiji/categories.json)]
   SV --> CL[EnableBankingClient<br/>JWT RS256, httpx2]
   SV --> ST[(BankStore<br/>.yiji/bank.json)]
   CL --> E[(api.enablebanking.com<br/>sandbox or production app)]
   S[Settings<br/>app/config.py] -.-> SV
-  GP[GitHub Pages yiji-site<br/>callback.html] -->|production: relay to 127.0.0.1:port| R
+  GP[GitHub Pages yiji-site<br/>callback.html] -->|"production: relay to 127.0.0.1:port<br/>or YIJI_PUBLIC_URL origin"| R
   EB2[Bank / Mock ASPSP] -->|sandbox: https://localhost:8100/callback| R
 </pre>
 </section>
@@ -64,29 +65,30 @@ flowchart LR
 <pre class="mermaid">
 sequenceDiagram
   participant U as Browser
-  participant Y as Yiji (local)
+  participant Y as Yiji (local or server)
   participant EB as Enable Banking
   participant GP as yiji-site callback.html
   U->>Y: click "Connect bank"
-  Y->>EB: POST /auth (state = "port.nonce", redirect = active redirect URL)
+  Y->>EB: POST /auth (state = "target.nonce", redirect = active redirect URL)
   EB-->>U: redirect to bank (Mock ASPSP in sandbox)
   alt sandbox
     U->>Y: GET https://localhost:8100/callback?code&state
   else production
     U->>GP: bank returns ?code&state (https required)
-    GP->>Y: GET /api/bank/callback (port from state, loopback only)
+    GP->>Y: GET /api/bank/callback (target: port → http://127.0.0.1:port · base64url https origin → that origin)
   end
   Y->>Y: check nonce (single use)
   Y->>EB: POST /sessions {code}
   Y-->>U: 303 → / (or /?bank_error=code)
   U->>Y: GET /?period=week|month[&counterparty=name | &category=id]&compare=m2m|y2y[&currency=XXX]
   Y->>EB: GET /accounts/{uid}/transactions (first sync: 13 months, refused → 90 → 30 days · later: from last sync − 7 days · at most every 12 h)
-  Y->>Y: bank profile → booked debits only → replace that window in yiji.sqlite3
+  Y->>Y: drop transfers to a connected account (IBAN hash) → bank profile → booked debits only → replace that window in yiji.sqlite3
   Y->>Y: fetch missing ECB rates · convert to chosen currency
   Y-->>U: KPI total + "Spending per day" bar chart
   Y-->>U: Counterparties + Categories donuts
   U->>Y: ⚙ Settings (header) → Categories · Counterparties boxes
 </pre>
+<p>State target and its limits: <code>docs/adr/0004</code>. On connect, Yiji keeps SHA-256 hashes of the connected accounts' IBANs in <code>bank.json</code> (never the IBANs) so money moved between them is not spending. Enable Banking refusals are logged as <code>Enable Banking refused POST: 400 REDIRECT_URI_NOT_ALLOWED</code> (no path, so no account ids); the dashboard shows only a safe message.</p>
 <p>Spending = booked debits only (pending, cancelled, rejected and income are never stored), dated by booking (else value) date, shown in the chosen currency (default: the one with most spending). Periods are rolling 7 / 30 days ending today. Comparison: the same number of days ending one month (M2M) or one year (Y2Y) earlier, a missing day in a shorter month becomes its last day; days the bank gave no history for count as 0.</p>
 </section>
 
@@ -121,6 +123,8 @@ flowchart LR
 flowchart LR
   EB[(Enable Banking<br/>transactions JSON)] --> PF["profile_for(ASPSP name, country)"]
   PF -->|Mock ASPSP / FI| MA[mock_aspsp]
+  PF -->|Bank Pekao / PL| PK["pekao<br/>method from last description line"]
+  PK --> PAY
   PF -->|any other bank| GE[generic]
   MA --> PAY["Payment<br/>name · payee · amount · currency · booked_on · payment method"]
   GE --> PAY
@@ -133,22 +137,17 @@ flowchart LR
   CV -.->|no rate| W[left out + warning]
 </pre>
 <ul>
+<li><b>Pekao:</b> no ISO codes; the last remittance line is the operation type. Card: <code>TRANSAKCJA KARTĄ PŁATNICZĄ</code> · BLIK: <code>PŁATNOŚĆ BLIK</code>, <code>PRZELEW BLIK WYCHODZĄCY</code> · Transfer: <code>PRZELEW</code>, <code>PRZELEW MOBILE</code>, <code>REALIZACJA PŁATNOŚCI PEOPAY</code> · Fee: <code>PROWIZJE AUT.</code>, <code>POBRANIE ZALEGŁEJ OPŁATY</code>. Anything else → Other + a log warning naming the type (add it to <code>app/bank_profiles/pekao.py</code>). <code>BLIK REF …</code> lines are not kept as names.</li>
 <li><b>Stored per payment:</b> first remittance line (name), creditor (payee), amount, currency, booking date, derived payment method, and the account's Enable Banking <code>identification_hash</code> (stable across sessions). Nothing else from the bank reaches disk.</li>
 <li><b>No duplicates without ids:</b> each fetch replaces that account's rows from the day the bank served onwards; older rows stay after the bank stops serving them. Reconnecting keeps the history.</li>
 <li><b>Bank connection gone:</b> the dashboard keeps showing stored history with the alert and Connect button above it.</li>
 <li><b>Rates:</b> ECB reference rates (EUR base, cross rates through EUR). Earlier days are fetched once; today is re-checked after the refresh window. A rates outage shows a warning and keeps older rates.</li>
 <li><b>Choose currency:</b> toggle next to Compare (<code>YIJI_DISPLAY_CURRENCIES</code> + any currency in the history); choice in <code>?currency=</code> (left out for the default); changing it reloads the page.</li>
 </ul>
-<h3>Daily sync (Ubuntu server)</h3>
+<h3>Daily sync and backup</h3>
 <pre>uv run python -m app.sync     # exit 0 synced · 1 bank/rates error or not configured · 2 reconnect needed
-
-mkdir -p ~/.config/systemd/user
-cp deploy/systemd/yiji-sync.* ~/.config/systemd/user/   # edit WorkingDirectory to the checkout
-systemctl --user daemon-reload
-systemctl --user enable --now yiji-sync.timer
-sudo loginctl enable-linger "$USER"                     # run without a login session
-journalctl --user -u yiji-sync                          # logs (no account ids)</pre>
-<p>Timer: every day at 00:00, <code>Persistent=true</code> catches up a run missed while the server was off. Each sync fetches from the last sync − <code>YIJI_SYNC_OVERLAP_DAYS</code>, so late bookings and missed days are filled in. Consent still expires after <code>YIJI_ENABLE_BANKING_CONSENT_DAYS</code>: reconnect in the dashboard when the journal shows exit 2.</p>
+uv run python -m app.backup   # yiji.sqlite3 (SQLite backup API) + categories.json → YIJI_BACKUP_DIR/yiji-YYYY-MM-DD, keeps YIJI_BACKUP_KEEP</pre>
+<p>On the server both run from <code>deploy/systemd/yiji-sync.service</code> (see Server). Timer: every day at 00:00, <code>Persistent=true</code> catches up a run missed while the server was off. Each sync fetches from the last sync − <code>YIJI_SYNC_OVERLAP_DAYS</code>. The backup runs even when the sync fails; the unit keeps the sync's exit code.</p>
 </section>
 
 <section>
@@ -198,6 +197,7 @@ sequenceDiagram
   Browser->>FastAPI: GET /
   FastAPI->>NiceGUI: @ui.page("/") dashboard_page
   NiceGUI->>NiceGUI: not configured → alert · not connected, no history → empty_state + Connect · not connected with history → Connect + history · otherwise → period_filter, comparison_filter, currency_filter, SpendingFilters, SpendingOverview, Donut ×2 + ⚙ SettingsDialog (CategoryList + CounterpartiesTable) · category edits update Donut, filters, overview, list and table in place (no re-render, no scroll jump)
+  NiceGUI->>NiceGUI: connected, consent ends within YIJI_RECONNECT_WARNING_DAYS → "ends in N days" / "ends today" notice + Reconnect (count updated hourly in place)
   NiceGUI->>NiceGUI: session ended → stored session cleared, "expired" alert + Connect · other bank error → "unavailable" alert, session kept · both still show stored history
   NiceGUI-->>Browser: HTML + websocket for live updates
 </pre>
@@ -220,9 +220,10 @@ app/
   database.py        yiji.sqlite3 schema + connect (WAL, busy timeout)
   rates/             Frankfurter client; RateBook (stored rates, missing-range fetch), ExchangeRates, convert_payments
   sync.py            python -m app.sync: headless daily sync with exit codes
+  backup.py          python -m app.backup: dated copy of history + categories, prunes old ones
   spending.py        Period, Comparison (M2M/Y2Y shift), history_start, change, daily spending, spending_by / all_time_spending_by / top_shares / merge_spellings (pure)
   payment_methods.py PaymentMethod enum
-  bank_profiles/     Per-bank mapping of transaction JSON → Payment: generic (ISO codes), mock_aspsp; profile_for()
+  bank_profiles/     Per-bank mapping of transaction JSON → Payment: generic (ISO codes), mock_aspsp, pekao; profile_for()
   categories.py      Category, CategoryBook (rules by counterparty name), CategoryStore
   spending_filter.py SpendingFilter (one counterparty or category; parse from URL), counterparty_names
   json_file.py       Atomic JSON write shared by the stores
@@ -232,9 +233,12 @@ app/
     components/      page_shell, overview_band, section, empty_state, chart, Donut,
                      period_filter, currency_filter, SpendingFilters, SpendingOverview, KpiTile, chip,
                      primary_button, ghost_button, alert, SettingsDialog, CategoryList,
-                     CounterpartiesTable
+                     CounterpartiesTable, reconnect_notice
     pages/           dashboard ("/")
-deploy/systemd/      yiji-sync.service + .timer templates (daily 00:00)
+Dockerfile           Image: uv-built venv, non-root uid 1000, /data + /backups, healthcheck
+.github/workflows/   image.yml: lint + types + unit tests, then amd64/arm64 image → ghcr.io/soverndk/yiji
+deploy/              docker-compose.yml + .env.example for the server
+deploy/systemd/      yiji-sync.service (sync + backup via compose) + .timer (daily 00:00)
 site/                Static pages (callback relay, privacy, terms), published to public repo yiji-site
 scripts/             publish-site.sh: copy site/ to the Pages repo
 tests/
@@ -270,6 +274,34 @@ uv run pytest -m sandbox                  # live: real sandbox app from .env</pr
 </section>
 
 <section>
+<h2>Server (Docker, Tailscale, Caddy)</h2>
+<pre class="mermaid">
+flowchart LR
+  GH[push to main] --> CI[GitHub Actions<br/>check → build amd64+arm64] --> GHCR[(ghcr.io/soverndk/yiji<br/>latest · sha-xxxxxxx)]
+  GHCR -->|docker compose pull| Y
+  D[Device on tailnet] -->|"https://yiji.home.net<br/>(Pi-hole DNS)"| CD[Caddy container]
+  CD -->|yiji:8100 on CADDY_NETWORK| Y[yiji container<br/>no published port]
+  Y --- V[(volume yiji-data → /data)]
+  Y --- B[(./backups → /backups)]
+  Y --- K[./secrets/enable-banking.pem<br/>read-only]
+  T[systemd timer 00:00] -->|docker compose run| Y
+</pre>
+<ol>
+<li>GHCR login (package is private): <code>echo &lt;PAT with read:packages&gt; | docker login ghcr.io -u SovernDK --password-stdin</code></li>
+<li><code>sudo mkdir -p /opt/yiji/secrets /opt/yiji/backups</code>; copy <code>deploy/docker-compose.yml</code> and <code>deploy/.env.example</code> (as <code>.env</code>) there; fill <code>CADDY_NETWORK</code>, <code>YIJI_STORAGE_SECRET</code> (<code>openssl rand -hex 32</code>), <code>ENABLE_BANKING_APP_ID</code>.</li>
+<li>Key + folders readable by the container user: <code>cp key.pem /opt/yiji/secrets/enable-banking.pem &amp;&amp; sudo chown -R 1000:1000 /opt/yiji/secrets /opt/yiji/backups &amp;&amp; chmod 400 /opt/yiji/secrets/enable-banking.pem</code></li>
+<li>Caddyfile (keep your existing certificate setup), then reload Caddy:
+<pre>yiji.home.net {
+	reverse_proxy yiji:8100
+}</pre></li>
+<li><code>cd /opt/yiji &amp;&amp; docker compose pull &amp;&amp; docker compose up -d</code>; open <code>https://yiji.home.net</code> → Connect bank → select all accounts. The first fill stores the 90 days Pekao serves.</li>
+<li>Daily sync + backup: <code>sudo cp deploy/systemd/yiji-sync.* /etc/systemd/system/ &amp;&amp; sudo systemctl daemon-reload &amp;&amp; sudo systemctl enable --now yiji-sync.timer</code>; logs: <code>journalctl -u yiji-sync</code>.</li>
+<li>Update: <code>docker compose pull &amp;&amp; docker compose up -d</code>.</li>
+</ol>
+<p>The bank callback reaches the server through the GitHub Pages relay: the redirect URL registered in Enable Banking stays the Pages one, and <code>YIJI_PUBLIC_URL</code> puts the server's origin into <code>state</code>. A new image or server never needs the Enable Banking panel changed.</p>
+</section>
+
+<section>
 <h2>Config</h2>
 <p>Env vars or <code>.env</code> at the project root (see <code>.env.example</code>); the file is found from any working directory. Empty values count as unset.</p>
 <table>
@@ -280,14 +312,18 @@ uv run pytest -m sandbox                  # live: real sandbox app from .env</pr
 <tr><td><code>YIJI_HOST</code></td><td>127.0.0.1</td><td>Bind address</td></tr>
 <tr><td><code>YIJI_PORT</code></td><td>8100</td><td>HTTP port (1–65535)</td></tr>
 <tr><td><code>YIJI_RELOAD</code></td><td>false</td><td>Auto-reload on code changes (dev)</td></tr>
-<tr><td><code>YIJI_DATA_DIR</code></td><td>.yiji/</td><td>bank.json (session), yiji.sqlite3 (payments + rates), categories.json (git-ignored)</td></tr>
+<tr><td><code>YIJI_DATA_DIR</code></td><td>.yiji/</td><td>bank.json (session), yiji.sqlite3 (payments + rates), categories.json (git-ignored); <code>/data</code> in the image</td></tr>
+<tr><td><code>YIJI_BACKUP_DIR</code></td><td>.yiji-backups/</td><td>Where <code>app.backup</code> writes; <code>/backups</code> in the image</td></tr>
+<tr><td><code>YIJI_BACKUP_KEEP</code></td><td>14</td><td>Daily backups kept (min 1)</td></tr>
+<tr><td><code>YIJI_PUBLIC_URL</code></td><td>—</td><td>Server only: bare https origin (e.g. <code>https://yiji.home.net</code>) the relay forwards the bank callback to; unset = loopback port</td></tr>
+<tr><td><code>YIJI_RECONNECT_WARNING_DAYS</code></td><td>7</td><td>Days before consent ends that the dashboard counts down and offers Reconnect (1–180)</td></tr>
 <tr><td><code>YIJI_ENABLE_BANKING_ENVIRONMENT</code></td><td>sandbox</td><td><code>sandbox</code> or <code>production</code>; picks which app id/key pair is used</td></tr>
 <tr><td><code>YIJI_ENABLE_BANKING_API_URL</code></td><td>https://api.enablebanking.com</td><td>API base (E2E points it at the fake)</td></tr>
 <tr><td><code>YIJI_ENABLE_BANKING_SANDBOX_REDIRECT_URL</code></td><td>https://localhost:8100/callback</td><td>Sandbox redirect; loopback URLs are served by the app itself</td></tr>
 <tr><td><code>YIJI_ENABLE_BANKING_REDIRECT_URL</code></td><td>https://sovernDK.github.io/yiji-site/callback.html</td><td>Production redirect (hosted relay)</td></tr>
 <tr><td><code>YIJI_SSL_CERTFILE</code> / <code>YIJI_SSL_KEYFILE</code></td><td>—</td><td>Serve HTTPS (needed for an https localhost redirect)</td></tr>
 <tr><td><code>YIJI_ENABLE_BANKING_ASPSP_NAME</code> / <code>_COUNTRY</code></td><td>Mock ASPSP / FI</td><td>Bank to connect</td></tr>
-<tr><td><code>YIJI_ENABLE_BANKING_CONSENT_DAYS</code></td><td>90</td><td>Requested access length (1–180)</td></tr>
+<tr><td><code>YIJI_ENABLE_BANKING_CONSENT_DAYS</code></td><td>90</td><td>Requested access length (1–180; Pekao allows 180)</td></tr>
 <tr><td><code>YIJI_ENABLE_BANKING_TIMEOUT_SECONDS</code></td><td>30</td><td>HTTP timeout</td></tr>
 <tr><td><code>YIJI_TRANSACTIONS_REFRESH_MINUTES</code></td><td>720</td><td>Minimum time between dashboard fetches; PSD2 limits background fetches to ~4/day and the daily sync uses one</td></tr>
 <tr><td><code>YIJI_SYNC_OVERLAP_DAYS</code></td><td>7</td><td>Days before the last sync fetched again (late bookings), 1–90</td></tr>
