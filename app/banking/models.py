@@ -1,3 +1,4 @@
+import hashlib
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
@@ -11,8 +12,20 @@ class AuthResponse(BaseModel):
     url: HttpUrl
 
 
+class AccountReference(BaseModel):
+    iban: str | None = None
+
+    def iban_hash(self) -> str | None:
+        """Compares account numbers without keeping them; banks differ in spacing and case."""
+        if not self.iban:
+            return None
+        normalised = "".join(self.iban.split()).upper()
+        return hashlib.sha256(normalised.encode()).hexdigest()
+
+
 class Account(BaseModel):
     uid: str = Field(min_length=1)
+    account_id: AccountReference | None = None
     identification_hash: str | None = Field(
         default=None, min_length=1, description="Names the account the same way in every session."
     )
@@ -56,6 +69,7 @@ class Transaction(BaseModel):
     value_date: date | None = None
     transaction_date: date | None = None
     creditor: Party | None = None
+    creditor_account: AccountReference | None = None
     remittance_information: list[str] = []
     bank_transaction_code: BankTransactionCode | None = None
 

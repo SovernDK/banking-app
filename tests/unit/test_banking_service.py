@@ -229,6 +229,34 @@ def test_each_account_keeps_its_own_payments(
     assert _amounts(service) == [Decimal("5"), Decimal("5")]
 
 
+def test_transfers_between_connected_accounts_are_not_spending(
+    service: BankingService, connect: Connect, fake_bank: FakeBankState
+) -> None:
+    fake_bank.accounts = [
+        {"uid": "current", "account_id": {"iban": "PL61109010140000071219812874"}},
+        {"uid": "savings", "account_id": {"iban": "PL27114020040000300201355387"}},
+    ]
+    fake_bank.transactions = [
+        debit("500", date(2026, 11, 14), creditor_iban="PL27 1140 2004 0000 3002 0135 5387"),
+        debit("40", date(2026, 11, 14), creditor_iban="PL83101010230000261395100000"),
+    ]
+    connect(service)
+
+    service.refresh()
+
+    assert _amounts(service) == [Decimal("40"), Decimal("40")]
+
+
+def test_bank_store_keeps_no_account_numbers(
+    service: BankingService, connect: Connect, fake_bank: FakeBankState, tmp_path: Path
+) -> None:
+    iban = "PL61109010140000071219812874"
+    fake_bank.accounts = [{"uid": "current", "account_id": {"iban": iban}}]
+    connect(service)
+
+    assert iban not in (tmp_path / STORE_FILENAME).read_text()
+
+
 def test_store_written_before_payments_were_kept_syncs_the_full_history(
     service: BankingService,
     connect: Connect,

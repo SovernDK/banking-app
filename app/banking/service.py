@@ -89,6 +89,11 @@ class BankingService:
             StoredSession(
                 account_uids=[account.uid for account in session.accounts],
                 account_keys={account.uid: account.key for account in session.accounts},
+                own_iban_hashes={
+                    iban_hash
+                    for account in session.accounts
+                    if account.account_id and (iban_hash := account.account_id.iban_hash())
+                },
                 valid_until=session.access.valid_until,
             )
         )
@@ -114,7 +119,8 @@ class BankingService:
                 payments = [
                     payment
                     for transaction in transactions
-                    if (payment := self._profile(transaction)) is not None
+                    if not session.is_own_transfer(transaction)
+                    and (payment := self._profile(transaction)) is not None
                 ]
                 self._history.replace_from(session.account_key(account_uid), served_from, payments)
         except BankSessionExpiredError:

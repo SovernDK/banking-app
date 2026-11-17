@@ -22,6 +22,7 @@ def debit(
     *,
     currency: str = "EUR",
     creditor: str | None = None,
+    creditor_iban: str | None = None,
     remittance: list[str] | None = None,
     family: str | None = None,
     sub_family: str | None = None,
@@ -37,6 +38,8 @@ def debit(
     }
     if creditor is not None:
         transaction["creditor"] = {"name": creditor}
+    if creditor_iban is not None:
+        transaction["creditor_account"] = {"iban": creditor_iban}
     if family or sub_family:
         transaction["bank_transaction_code"] = {"code": family, "sub_code": sub_family}
     return transaction
@@ -44,7 +47,7 @@ def debit(
 
 class FakeBankConfig(BaseModel):
     transactions: list[dict[str, Any]] = []
-    accounts: list[dict[str, str]] = [
+    accounts: list[dict[str, Any]] = [
         {"uid": FAKE_ACCOUNT_UID, "identification_hash": FAKE_ACCOUNT_HASH}
     ]
     """Every account serves the same transactions."""

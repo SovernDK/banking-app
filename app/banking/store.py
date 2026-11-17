@@ -4,6 +4,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
 
+from app.banking.models import Transaction
 from app.json_file import write_atomically
 
 logger = logging.getLogger(__name__)
@@ -15,10 +16,16 @@ class StoredSession(BaseModel):
     account_uids: list[str]
     account_keys: dict[str, str] = {}
     """Account uid to the key its payments are stored under; uids change with every session."""
+    own_iban_hashes: set[str] = set()
+    """Connected accounts, so moving money between them is not counted as spending."""
     valid_until: datetime
 
     def account_key(self, account_uid: str) -> str:
         return self.account_keys.get(account_uid, account_uid)
+
+    def is_own_transfer(self, transaction: Transaction) -> bool:
+        account = transaction.creditor_account
+        return account is not None and account.iban_hash() in self.own_iban_hashes
 
 
 class StoredState(BaseModel):

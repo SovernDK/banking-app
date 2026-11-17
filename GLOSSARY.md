@@ -5,7 +5,7 @@ A personal finance app that shows a person's bank transactions as spending chart
 ## Spending
 
 **Spending**:
-Money leaving the account: booked debits only. Pending payments count once the bank books them; cancelled and rejected ones never do.
+Money leaving the account: booked debits only. Pending payments count once the bank books them; cancelled and rejected ones never do. Money moved between two accounts in the same bank connection is not spending.
 _Avoid_: Expenses, outgoings
 
 **Payment**:
