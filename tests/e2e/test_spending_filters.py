@@ -187,10 +187,12 @@ def test_selected_option_is_drawn_in_dark_ink_in_dark_mode(dashboard: DashboardP
     expect(selected).to_have_css("color", "rgb(246, 247, 237)")
 
 
-@pytest.mark.parametrize("width", [1280, 390])
+@pytest.mark.parametrize("width", [1280, 650, 390])
 def test_filters_share_one_row_below_the_toggles_on_any_screen(
     dashboard: DashboardPage, width: int
 ) -> None:
+    """Between the sm and md breakpoints the fixed-width selects pushed Clear filters out of
+    the band and the page scrolled sideways."""
     dashboard.page.set_viewport_size({"width": width, "height": 900})
     expect(dashboard.clear_filters_button).to_be_visible()
     toggles = [dashboard.period_filter, dashboard.comparison_filter, dashboard.currency_filter]
@@ -204,7 +206,17 @@ def test_filters_share_one_row_below_the_toggles_on_any_screen(
             clear["y"] < select["y"] + select["height"]
             and select["y"] < clear["y"] + clear["height"]
         )
-    assert clear["x"] + clear["width"] <= width
+    clear_label = expect(dashboard.clear_filters_button.get_by_text("Clear filters"))
+    if width < 640:  # Tailwind's sm breakpoint
+        clear_label.to_be_hidden()
+    else:
+        clear_label.to_be_visible()
+    assert not _overflows_sideways(dashboard.spending_filters)
+    assert not _overflows_sideways(dashboard.page.locator("html"))
+
+
+def _overflows_sideways(locator: Locator) -> bool:
+    return locator.evaluate("element => element.scrollWidth > element.clientWidth")
 
 
 def _box(locator: Locator) -> FloatRect:

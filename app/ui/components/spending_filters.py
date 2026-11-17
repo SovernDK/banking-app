@@ -60,7 +60,7 @@ def _filter_select(
             with_input=with_input,
             on_change=on_change,
         )
-        .classes("min-w-0 flex-1 sm:w-56 sm:flex-none")
+        .classes("min-w-0 flex-1 sm:max-w-56")
         .props(f'dense outlined options-dense data-testid="{testid}"')
     )
 
@@ -81,7 +81,11 @@ class SpendingFilters:
         self._all_label = texts.ALL(language)
         self._value = value
         self._on_change = on_change
-        with ui.row().classes("w-full flex-nowrap items-center gap-2 sm:gap-4"):
+        with (
+            ui.row()
+            .classes("w-full flex-nowrap items-center gap-2 sm:gap-4")
+            .props('data-testid="spending-filters"')
+        ):
             self._build(counterparties, language)
         self.update_categories(categories, value)
 

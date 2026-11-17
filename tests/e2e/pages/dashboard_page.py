@@ -181,5 +181,9 @@ class DashboardPage:
         return self.page.get_by_role("option")
 
     @property
+    def spending_filters(self) -> Locator:
+        return self.page.get_by_test_id("spending-filters")
+
+    @property
     def clear_filters_button(self) -> Locator:
         return self.page.get_by_role("button", name="Clear filters")
