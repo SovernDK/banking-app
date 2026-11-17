@@ -92,14 +92,19 @@ def database(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def settings() -> Settings:
+    return Settings(_env_file=None, port=8123, transactions_refresh_minutes=60)  # type: ignore[call-arg]
+
+
+@pytest.fixture
 def service(
     bank_client: EnableBankingClient,
     rate_client: ExchangeRateClient,
     store: BankStore,
     database: Path,
     clock: Clock,
+    settings: Settings,
 ) -> BankingService:
-    settings = Settings(_env_file=None, port=8123, transactions_refresh_minutes=60)  # type: ignore[call-arg]
     return BankingService(
         client=bank_client,
         store=store,

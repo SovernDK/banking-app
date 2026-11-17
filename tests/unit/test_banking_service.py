@@ -7,10 +7,12 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from pydantic import HttpUrl
 
 from app.banking.client import BankApiError, BankSessionExpiredError
 from app.banking.service import BankingService, InvalidStateError, NotConnectedError
 from app.banking.store import STORE_FILENAME, BankStore
+from app.config import Settings
 from app.payment_methods import PaymentMethod
 from app.payments import Payment
 from app.spending_filter import counterparty_names
@@ -38,6 +40,16 @@ def test_connect_state_carries_local_port_for_the_callback_relay(
     service.connect_url()
 
     assert fake_bank.auth_bodies[-1]["state"].startswith("8123.")
+
+
+def test_connect_state_carries_the_public_origin_when_yiji_runs_on_a_server(
+    service: BankingService, fake_bank: FakeBankState, settings: Settings
+) -> None:
+    settings.public_url = HttpUrl("https://yiji.home.net")
+
+    service.connect_url()
+
+    assert fake_bank.auth_bodies[-1]["state"].startswith("aHR0cHM6Ly95aWppLmhvbWUubmV0.")
 
 
 def test_completing_authorization_connects_and_survives_restart(

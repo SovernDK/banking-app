@@ -264,6 +264,37 @@ def test_hosted_redirect_needs_no_local_server_setup() -> None:
     settings.check_local_callback()
 
 
+@pytest.mark.parametrize(
+    ("public_url", "expected"),
+    [
+        (None, None),
+        ("https://yiji.home.net", "https://yiji.home.net"),
+        ("https://Yiji.Home.net/", "https://yiji.home.net"),
+        ("https://yiji.home.net:8443", "https://yiji.home.net:8443"),
+    ],
+)
+def test_public_origin_is_read_from_public_url(
+    monkeypatch: pytest.MonkeyPatch, public_url: str | None, expected: str | None
+) -> None:
+    if public_url is not None:
+        monkeypatch.setenv("YIJI_PUBLIC_URL", public_url)
+
+    assert Settings(_env_file=None).public_origin == expected  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize(
+    "public_url",
+    ["http://yiji.home.net", "https://yiji.home.net/yiji", "https://yiji.home.net/?a=1"],
+)
+def test_rejects_public_url_that_is_not_a_bare_https_origin(
+    monkeypatch: pytest.MonkeyPatch, public_url: str
+) -> None:
+    monkeypatch.setenv("YIJI_PUBLIC_URL", public_url)
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)  # type: ignore[call-arg]
+
+
 def test_default_language_is_english_unless_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("YIJI_DEFAULT_LANGUAGE", raising=False)
     assert Settings(_env_file=None).default_language is Language.EN  # type: ignore[call-arg]

@@ -65,7 +65,7 @@ class BankingService:
         return session
 
     def connect_url(self) -> str:
-        state, nonce = new_state(self._settings.port)
+        state, nonce = new_state(self._settings.port, self._settings.public_origin)
         stored = self._store.load()
         stored.pending_nonce = nonce
         self._store.save(stored)

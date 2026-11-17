@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     ssl_certfile: Path | None = None
     ssl_keyfile: Path | None = None
     data_dir: Path = PROJECT_ROOT / ".yiji"
+    public_url: HttpUrl | None = Field(
+        default=None,
+        description="Where Yiji is reached when it runs on a server; the bank callback goes there.",
+    )
 
     enable_banking_environment: EnableBankingEnvironment = "sandbox"
     enable_banking_api_url: HttpUrl = HttpUrl("https://api.enablebanking.com")
@@ -120,6 +124,16 @@ class Settings(BaseSettings):
         default=None, validation_alias="ENABLE_BANKING_SANDBOX_KEY_PATH"
     )
 
+    @field_validator("public_url")
+    @classmethod
+    def _require_bare_https_origin(cls, url: HttpUrl | None) -> HttpUrl | None:
+        # The hosted relay forwards to <origin>/api/bank/callback and accepts nothing else.
+        if url is not None and (
+            url.scheme != "https" or url.path not in (None, "", "/") or url.query
+        ):
+            raise ValueError("expected a bare https origin such as https://yiji.example.net")
+        return url
+
     @field_validator(
         "enable_banking_key_path", "enable_banking_sandbox_key_path", "ssl_certfile", "ssl_keyfile"
     )
@@ -138,6 +152,13 @@ class Settings(BaseSettings):
         if path is not None:
             load_rsa_private_key(path)
         return path
+
+    @property
+    def public_origin(self) -> str | None:
+        if self.public_url is None:
+            return None
+        port = f":{self.public_url.port}" if self.public_url.port != 443 else ""
+        return f"https://{self.public_url.host}{port}"
 
     @property
     def active_redirect_url(self) -> HttpUrl:
