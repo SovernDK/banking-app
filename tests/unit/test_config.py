@@ -277,3 +277,19 @@ def test_rejects_unsupported_default_language(monkeypatch: pytest.MonkeyPatch) -
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+def test_display_currencies_are_read_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("YIJI_DISPLAY_CURRENCIES", '["EUR", "GBP"]')
+
+    assert Settings(_env_file=None).display_currencies == ["EUR", "GBP"]  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("currencies", ['["pln"]', '["EURO"]', "[]"])
+def test_rejects_display_currencies_that_are_not_iso_codes(
+    monkeypatch: pytest.MonkeyPatch, currencies: str
+) -> None:
+    monkeypatch.setenv("YIJI_DISPLAY_CURRENCIES", currencies)
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)  # type: ignore[call-arg]

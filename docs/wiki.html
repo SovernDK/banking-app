@@ -43,7 +43,11 @@ flowchart LR
   N --> SV[BankingService<br/>app/banking/service.py]
   R --> SV
   N --> D[spending.py<br/>daily totals, spending_by]
-  N --> BP[bank_profiles/<br/>payment method per bank]
+  SV --> BP[bank_profiles/<br/>bank JSON → Payment]
+  SV --> HS[(HistoryStore + RateBook<br/>.yiji/yiji.sqlite3)]
+  SV --> RC[ExchangeRateClient<br/>app/rates]
+  RC --> FR[(api.frankfurter.dev<br/>ECB daily rates)]
+  SY[python -m app.sync<br/>systemd timer 00:00] --> SV
   N --> CAT[categories.py<br/>CategoryBook + rules]
   CAT --> CS[(CategoryStore<br/>.yiji/categories.json)]
   SV --> CL[EnableBankingClient<br/>JWT RS256, httpx2]
@@ -75,27 +79,24 @@ sequenceDiagram
   Y->>Y: check nonce (single use)
   Y->>EB: POST /sessions {code}
   Y-->>U: 303 → / (or /?bank_error=code)
-  U->>Y: GET /?period=week|month[&counterparty=name | &category=id]&compare=m2m|y2y
-  Y->>EB: GET /accounts/{uid}/transactions (13 months; refused → 90, then 30 days; cached 6 h)
+  U->>Y: GET /?period=week|month[&counterparty=name | &category=id]&compare=m2m|y2y[&currency=XXX]
+  Y->>EB: GET /accounts/{uid}/transactions (first sync: 13 months, refused → 90 → 30 days · later: from last sync − 7 days · at most every 12 h)
+  Y->>Y: bank profile → booked debits only → replace that window in yiji.sqlite3
+  Y->>Y: fetch missing ECB rates · convert to chosen currency
   Y-->>U: KPI total + "Spending per day" bar chart
   Y-->>U: Counterparties + Categories donuts
   U->>Y: ⚙ Settings (header) → Categories · Counterparties boxes
 </pre>
-<p>Spending = debits (<code>DBIT</code>) excluding cancelled/rejected, by booking → value → transaction date, in the currency with most spending. Periods are rolling 7 / 30 days ending today. Comparison: the same number of days ending one month (M2M) or one year (Y2Y) earlier, a missing day in a shorter month becomes its last day; days the bank gave no history for count as 0.</p>
+<p>Spending = booked debits only (pending, cancelled, rejected and income are never stored), dated by booking (else value) date, shown in the chosen currency (default: the one with most spending). Periods are rolling 7 / 30 days ending today. Comparison: the same number of days ending one month (M2M) or one year (Y2Y) earlier, a missing day in a shorter month becomes its last day; days the bank gave no history for count as 0.</p>
 </section>
 
 <section>
 <h2>Spending breakdown</h2>
 <pre class="mermaid">
 flowchart LR
-  T[Spending in period<br/>main currency] --> PF["profile_for(ASPSP name, country)"]
-  PF -->|Mock ASPSP / FI| MA[mock_aspsp: ISO codes, else creditor → Transfer]
-  PF -->|any other bank| GE[generic: ISO bank transaction code, else Other]
-  T --> CN["Counterparty name<br/>creditor, else 1st remittance line"]
+  T[Payments in period<br/>chosen currency] --> CN["Counterparty name<br/>payee, else name"]
   CN -->|named| PY["Counterparty donut key<br/>spellings differing in case merged"]
-  CN -->|nameless| PF
-  MA -->|payment method, e.g. ATM withdrawal| PY
-  GE -->|payment method| PY
+  CN -->|nameless| PM["stored payment method<br/>e.g. ATM withdrawal"] --> PY
   PY --> PD((Counterparties donut))
   CN --> RU{Category rule?<br/>case/space-insensitive}
   RU -->|yes| CD((Categories donut))
@@ -112,6 +113,42 @@ flowchart LR
 <li>Categories are user-created (seeded from <code>YIJI_STARTER_CATEGORIES</code> on first run); deleting one makes its names Uncategorised. A category gets a palette colour when first used and keeps it.</li>
 <li>Donuts show at most 7 slices: Counterparties = 6 biggest + hatched "Other"; Categories = 6 biggest + hatched "Other" + grey "Uncategorised". Terms: <code>GLOSSARY.md</code>.</li>
 </ul>
+</section>
+
+<section>
+<h2>Spending history, exchange rates, daily sync</h2>
+<pre class="mermaid">
+flowchart LR
+  EB[(Enable Banking<br/>transactions JSON)] --> PF["profile_for(ASPSP name, country)"]
+  PF -->|Mock ASPSP / FI| MA[mock_aspsp]
+  PF -->|any other bank| GE[generic]
+  MA --> PAY["Payment<br/>name · payee · amount · currency · booked_on · payment method"]
+  GE --> PAY
+  PF -.->|"credit, pending, cancelled,<br/>rejected, undated, 0 → dropped"| X((✕))
+  PAY -->|"replace_from(account key, served from)"| DB[(payments<br/>yiji.sqlite3)]
+  FR[(Frankfurter / ECB)] -->|only missing days| RT[(exchange_rates<br/>per euro, per day)]
+  DB --> CV["convert_payments(currency)<br/>rate on booking day, else latest ≤ 7 days before"]
+  RT --> CV
+  CV --> UI((Dashboard))
+  CV -.->|no rate| W[left out + warning]
+</pre>
+<ul>
+<li><b>Stored per payment:</b> first remittance line (name), creditor (payee), amount, currency, booking date, derived payment method, and the account's Enable Banking <code>identification_hash</code> (stable across sessions). Nothing else from the bank reaches disk.</li>
+<li><b>No duplicates without ids:</b> each fetch replaces that account's rows from the day the bank served onwards; older rows stay after the bank stops serving them. Reconnecting keeps the history.</li>
+<li><b>Bank connection gone:</b> the dashboard keeps showing stored history with the alert and Connect button above it.</li>
+<li><b>Rates:</b> ECB reference rates (EUR base, cross rates through EUR). Earlier days are fetched once; today is re-checked after the refresh window. A rates outage shows a warning and keeps older rates.</li>
+<li><b>Choose currency:</b> toggle next to Compare (<code>YIJI_DISPLAY_CURRENCIES</code> + any currency in the history); choice in <code>?currency=</code> (left out for the default); changing it reloads the page.</li>
+</ul>
+<h3>Daily sync (Ubuntu server)</h3>
+<pre>uv run python -m app.sync     # exit 0 synced · 1 bank/rates error or not configured · 2 reconnect needed
+
+mkdir -p ~/.config/systemd/user
+cp deploy/systemd/yiji-sync.* ~/.config/systemd/user/   # edit WorkingDirectory to the checkout
+systemctl --user daemon-reload
+systemctl --user enable --now yiji-sync.timer
+sudo loginctl enable-linger "$USER"                     # run without a login session
+journalctl --user -u yiji-sync                          # logs (no account ids)</pre>
+<p>Timer: every day at 00:00, <code>Persistent=true</code> catches up a run missed while the server was off. Each sync fetches from the last sync − <code>YIJI_SYNC_OVERLAP_DAYS</code>, so late bookings and missed days are filled in. Consent still expires after <code>YIJI_ENABLE_BANKING_CONSENT_DAYS</code>: reconnect in the dashboard when the journal shows exit 2.</p>
 </section>
 
 <section>
@@ -139,12 +176,12 @@ flowchart LR
 <h2>Languages</h2>
 <pre class="mermaid">
 flowchart LR
-  T["app/texts.py<br/>every UI string as Text(pl, en, ja)<br/>or Plural (CLDR forms)"] --> UI[components + dashboard<br/>texts.X(language, **values)]
+  T["app/texts.py<br/>every UI string as Text(pl, en, ja)<br/>or Plural (CLDR forms)"] --> UI["components + dashboard<br/>texts.X(language, **values)"]
   PK["Top bar picker<br/>PL · EN · JP (before ⚙)"] -->|app.storage.user language| ST[(per-browser cookie storage)]
   ST -->|"page_shell: parse, else YIJI_DEFAULT_LANGUAGE"| L[PageShell.language]
-  PK -->|reload; URL keeps filters| L
+  PK -->|reload, URL keeps filters| L
   L --> UI
-  L -->|"html lang=pl|en|ja"| H[html]
+  L -->|"html lang = pl / en / ja"| H[html]
 </pre>
 <ul>
 <li>Add a string: one constant in <code>app/texts.py</code> with all three languages (missing one = type error). Domain enums (Period, Comparison, BankErrorCode) carry no text; <code>texts.PERIODS</code>, <code>COMPARISONS</code>, <code>BANK_ERRORS</code> map them.</li>
@@ -159,8 +196,8 @@ flowchart LR
 sequenceDiagram
   Browser->>FastAPI: GET /
   FastAPI->>NiceGUI: @ui.page("/") dashboard_page
-  NiceGUI->>NiceGUI: not configured → alert · not connected → empty_state + Connect · connected → period_filter, comparison_filter, SpendingFilters, SpendingOverview, Donut ×2 + ⚙ SettingsDialog (CategoryList + CounterpartiesTable) · category edits update Donut, filters, overview, list and table in place (no re-render, no scroll jump)
-  NiceGUI->>NiceGUI: session ended → stored session cleared, "expired" alert + Connect · other bank error → "unavailable" alert, session kept
+  NiceGUI->>NiceGUI: not configured → alert · not connected, no history → empty_state + Connect · not connected with history → Connect + history · otherwise → period_filter, comparison_filter, currency_filter, SpendingFilters, SpendingOverview, Donut ×2 + ⚙ SettingsDialog (CategoryList + CounterpartiesTable) · category edits update Donut, filters, overview, list and table in place (no re-render, no scroll jump)
+  NiceGUI->>NiceGUI: session ended → stored session cleared, "expired" alert + Connect · other bank error → "unavailable" alert, session kept · both still show stored history
   NiceGUI-->>Browser: HTML + websocket for live updates
 </pre>
 <p>"Session ended" = the bank error body's <code>error</code> contains <code>SESSION</code>: <code>EXPIRED_SESSION</code>, <code>CLOSED_SESSION</code>, <code>REVOKED_SESSION</code>, <code>SESSION_DOES_NOT_EXIST</code> (also <code>WRONG_SESSION_STATUS</code>). The HTTP status alone never ends a session.</p>
@@ -177,10 +214,14 @@ app/
   api/health.py      GET /api/health
   api/bank.py        Bank callback at /api/bank/callback + local redirect path (e.g. /callback)
   tls.py             python -m app.tls: self-signed localhost certificate for HTTPS
-  banking/           Enable Banking client, models, store, service, error codes
+  banking/           Enable Banking client, models, bank.json store, history (SQLite payments), service, error codes
+  payments.py        Payment (the only bank data kept), counterparty_name, display_name
+  database.py        yiji.sqlite3 schema + connect (WAL, busy timeout)
+  rates/             Frankfurter client; RateBook (stored rates, missing-range fetch), ExchangeRates, convert_payments
+  sync.py            python -m app.sync: headless daily sync with exit codes
   spending.py        Period, Comparison (M2M/Y2Y shift), history_start, change, daily spending, spending_by / all_time_spending_by / top_shares / merge_spellings (pure)
   payment_methods.py PaymentMethod enum
-  bank_profiles/     Per-bank payment-method rules: generic (ISO codes), mock_aspsp; profile_for(), transaction_name()
+  bank_profiles/     Per-bank mapping of transaction JSON → Payment: generic (ISO codes), mock_aspsp; profile_for()
   categories.py      Category, CategoryBook (rules by counterparty name), CategoryStore
   spending_filter.py SpendingFilter (one counterparty or category; parse from URL), counterparty_names
   json_file.py       Atomic JSON write shared by the stores
@@ -188,14 +229,15 @@ app/
     palette.py       Colour tokens, light + dark (page_shell exposes them as CSS variables; --q-* are !important to beat Quasar's inline brand colours)
     format.py        money / pct / date rendering
     components/      page_shell, overview_band, section, empty_state, chart, Donut,
-                     period_filter, SpendingFilters, SpendingOverview, KpiTile, chip,
+                     period_filter, currency_filter, SpendingFilters, SpendingOverview, KpiTile, chip,
                      primary_button, ghost_button, alert, SettingsDialog, CategoryList,
                      CounterpartiesTable
     pages/           dashboard ("/")
+deploy/systemd/      yiji-sync.service + .timer templates (daily 00:00)
 site/                Static pages (callback relay, privacy, terms), published to public repo yiji-site
 scripts/             publish-site.sh: copy site/ to the Pages repo
 tests/
-  fakes/             Fake Enable Banking API (unit via TestClient, E2E via uvicorn)
+  fakes/             Fake Enable Banking + Frankfurter APIs (unit via TestClient, E2E via uvicorn); payment builder
   unit/              pytest
   e2e/               Playwright; conftest starts app + fake bank; pages/ = page objects
 docs/wiki.html       this page
@@ -237,7 +279,7 @@ uv run pytest -m sandbox                  # live: real sandbox app from .env</pr
 <tr><td><code>YIJI_HOST</code></td><td>127.0.0.1</td><td>Bind address</td></tr>
 <tr><td><code>YIJI_PORT</code></td><td>8100</td><td>HTTP port (1–65535)</td></tr>
 <tr><td><code>YIJI_RELOAD</code></td><td>false</td><td>Auto-reload on code changes (dev)</td></tr>
-<tr><td><code>YIJI_DATA_DIR</code></td><td>.yiji/</td><td>Bank session + cached transactions, categories (git-ignored)</td></tr>
+<tr><td><code>YIJI_DATA_DIR</code></td><td>.yiji/</td><td>bank.json (session), yiji.sqlite3 (payments + rates), categories.json (git-ignored)</td></tr>
 <tr><td><code>YIJI_ENABLE_BANKING_ENVIRONMENT</code></td><td>sandbox</td><td><code>sandbox</code> or <code>production</code>; picks which app id/key pair is used</td></tr>
 <tr><td><code>YIJI_ENABLE_BANKING_API_URL</code></td><td>https://api.enablebanking.com</td><td>API base (E2E points it at the fake)</td></tr>
 <tr><td><code>YIJI_ENABLE_BANKING_SANDBOX_REDIRECT_URL</code></td><td>https://localhost:8100/callback</td><td>Sandbox redirect; loopback URLs are served by the app itself</td></tr>
@@ -246,7 +288,12 @@ uv run pytest -m sandbox                  # live: real sandbox app from .env</pr
 <tr><td><code>YIJI_ENABLE_BANKING_ASPSP_NAME</code> / <code>_COUNTRY</code></td><td>Mock ASPSP / FI</td><td>Bank to connect</td></tr>
 <tr><td><code>YIJI_ENABLE_BANKING_CONSENT_DAYS</code></td><td>90</td><td>Requested access length (1–180)</td></tr>
 <tr><td><code>YIJI_ENABLE_BANKING_TIMEOUT_SECONDS</code></td><td>30</td><td>HTTP timeout</td></tr>
-<tr><td><code>YIJI_TRANSACTIONS_REFRESH_MINUTES</code></td><td>360</td><td>Cache lifetime; PSD2 limits background fetches to ~4/day</td></tr>
+<tr><td><code>YIJI_TRANSACTIONS_REFRESH_MINUTES</code></td><td>720</td><td>Minimum time between dashboard fetches; PSD2 limits background fetches to ~4/day and the daily sync uses one</td></tr>
+<tr><td><code>YIJI_SYNC_OVERLAP_DAYS</code></td><td>7</td><td>Days before the last sync fetched again (late bookings), 1–90</td></tr>
+<tr><td><code>YIJI_DISPLAY_CURRENCIES</code></td><td>["PLN","EUR","USD","JPY"]</td><td>JSON list of ISO codes offered by "Choose currency"</td></tr>
+<tr><td><code>YIJI_EXCHANGE_RATES_API_URL</code></td><td>https://api.frankfurter.dev/v1</td><td>ECB rates API (E2E points it at the fake)</td></tr>
+<tr><td><code>YIJI_EXCHANGE_RATES_TIMEOUT_SECONDS</code></td><td>30</td><td>HTTP timeout for rates</td></tr>
+<tr><td><code>YIJI_EXCHANGE_RATE_LOOKBACK_DAYS</code></td><td>7</td><td>Oldest rate a payment may use (weekends, holidays), 1–31</td></tr>
 <tr><td><code>YIJI_TRANSACTIONS_FALLBACK_HISTORY_DAYS</code></td><td>90</td><td>History asked for when the bank refuses 13 months (min 30)</td></tr>
 <tr><td><code>YIJI_STARTER_CATEGORIES</code></td><td>Groceries, Eating out, Transport, Housing, Shopping, Health, Entertainment</td><td>JSON list seeded once when no categories file exists; names 1–40 chars</td></tr>
 <tr><td><code>ENABLE_BANKING_APP_ID</code></td><td>—</td><td>Enable Banking application ID (production)</td></tr>

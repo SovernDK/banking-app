@@ -30,3 +30,15 @@ def comparison_filter(
         label=texts.COMPARE_WITH(language),
         testid="comparison-filter",
     )
+
+
+def currency_filter(
+    currencies: list[str], value: str, on_change: Callable[[str], None], language: Language
+) -> ui.toggle:
+    return toggle_filter(
+        {currency: currency for currency in currencies},
+        value,
+        on_change,
+        label=texts.CURRENCY(language),
+        testid="currency-filter",
+    )

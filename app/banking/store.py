@@ -4,46 +4,35 @@ from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
 
-from app.banking.models import Transaction
 from app.json_file import write_atomically
 
 logger = logging.getLogger(__name__)
 
 STORE_FILENAME = "bank.json"
 
-# Bump whenever the cache would be incomplete for the current app (Transaction keeps more bank
-# fields, or history reaches further back); otherwise it stays so until the refresh window ends.
-TRANSACTIONS_CACHE_VERSION = 2
-
 
 class StoredSession(BaseModel):
     account_uids: list[str]
+    account_keys: dict[str, str] = {}
+    """Account uid to the key its payments are stored under; uids change with every session."""
     valid_until: datetime
+
+    def account_key(self, account_uid: str) -> str:
+        return self.account_keys.get(account_uid, account_uid)
 
 
 class StoredState(BaseModel):
     pending_nonce: str | None = None
     session: StoredSession | None = None
-    transactions: list[Transaction] = []
-    fetched_at: datetime | None = None
-    cache_version: int = 0
+    synced_at: datetime | None = None
 
-    def has_fresh_cache(self, now: datetime, max_age: timedelta) -> bool:
-        return (
-            self.fetched_at is not None
-            and self.cache_version == TRANSACTIONS_CACHE_VERSION
-            and now - self.fetched_at < max_age
-        )
-
-    def cache_transactions(self, transactions: list[Transaction], fetched_at: datetime) -> None:
-        self.transactions = transactions
-        self.fetched_at = fetched_at
-        self.cache_version = TRANSACTIONS_CACHE_VERSION
+    def synced_within(self, now: datetime, max_age: timedelta) -> bool:
+        return self.synced_at is not None and now - self.synced_at < max_age
 
     def replace_session(self, session: StoredSession | None) -> None:
+        """A new connection may reach further back than the last sync, so it fetches it all."""
         self.session = session
-        self.transactions = []
-        self.fetched_at = None
+        self.synced_at = None
 
 
 class BankStore:

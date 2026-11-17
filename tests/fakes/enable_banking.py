@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 FAKE_CODE = "fake-authorization-code"
 FAKE_ACCOUNT_UID = "fake-account"
+FAKE_ACCOUNT_HASH = "fake-account-hash"
 SESSION_VALID_UNTIL = "2099-01-01T00:00:00+00:00"
 
 
@@ -24,11 +25,13 @@ def debit(
     remittance: list[str] | None = None,
     family: str | None = None,
     sub_family: str | None = None,
+    status: str = "BOOK",
+    indicator: str = "DBIT",
 ) -> dict[str, Any]:
     transaction: dict[str, Any] = {
         "transaction_amount": {"amount": amount, "currency": currency},
-        "credit_debit_indicator": "DBIT",
-        "status": "BOOK",
+        "credit_debit_indicator": indicator,
+        "status": status,
         "booking_date": booking_date.isoformat(),
         "remittance_information": remittance or [],
     }
@@ -41,6 +44,10 @@ def debit(
 
 class FakeBankConfig(BaseModel):
     transactions: list[dict[str, Any]] = []
+    accounts: list[dict[str, str]] = [
+        {"uid": FAKE_ACCOUNT_UID, "identification_hash": FAKE_ACCOUNT_HASH}
+    ]
+    """Every account serves the same transactions."""
     page_size: int = 100
     deny_access: bool = False
     session_expired: bool = False
@@ -88,7 +95,7 @@ def create_fake_enable_banking() -> FastAPI:
             raise HTTPException(status_code=422, detail="invalid code")
         return {
             "session_id": "fake-session",
-            "accounts": [{"uid": FAKE_ACCOUNT_UID}],
+            "accounts": bank().accounts,
             "access": {"valid_until": SESSION_VALID_UNTIL},
         }
 

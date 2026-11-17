@@ -10,6 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.categories import CategoryName
 from app.i18n import Language
+from app.payments import CurrencyCode
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -69,11 +70,32 @@ class Settings(BaseSettings):
     enable_banking_aspsp_country: str = Field(default="FI", pattern=r"^[A-Z]{2}$")
     enable_banking_consent_days: int = Field(default=90, ge=1, le=180)
     enable_banking_timeout_seconds: float = Field(default=30, gt=0)
-    transactions_refresh_minutes: int = Field(default=360, ge=1)
+    transactions_refresh_minutes: int = Field(
+        default=720,
+        ge=1,
+        description="PSD2 banks allow about 4 unattended fetches a day; the daily sync uses one.",
+    )
+    sync_overlap_days: int = Field(
+        default=7,
+        ge=1,
+        le=90,
+        description="Days before the last fetch fetched again, for payments the bank books late.",
+    )
     transactions_fallback_history_days: int = Field(
         default=90,
         ge=30,
         description="History asked for when the bank refuses a year; PSD2 banks often cap at 90.",
+    )
+    exchange_rates_api_url: HttpUrl = HttpUrl("https://api.frankfurter.dev/v1")
+    exchange_rates_timeout_seconds: float = Field(default=30, gt=0)
+    exchange_rate_lookback_days: int = Field(
+        default=7,
+        ge=1,
+        le=31,
+        description="How far back a rate may come from; none is published on weekends or holidays.",
+    )
+    display_currencies: list[CurrencyCode] = Field(
+        default=["PLN", "EUR", "USD", "JPY"], min_length=1
     )
     starter_categories: list[CategoryName] = [
         "Groceries",

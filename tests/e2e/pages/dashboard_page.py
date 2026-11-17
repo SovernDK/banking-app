@@ -58,6 +58,9 @@ class DashboardPage:
     def confirm_delete(self) -> None:
         self.page.get_by_test_id("confirm-delete").click()
 
+    def select_currency(self, code: str) -> None:
+        self.currency_filter.get_by_role("button", name=code, exact=True).click()
+
     def select_comparison(self, label: str) -> None:
         self.comparison_filter.get_by_role("button", name=label).click()
 
@@ -148,6 +151,14 @@ class DashboardPage:
     @property
     def total_delta(self) -> Locator:
         return self.page.get_by_test_id("total-delta")
+
+    @property
+    def currency_filter(self) -> Locator:
+        return self.page.get_by_test_id("currency-filter")
+
+    @property
+    def rates_warning(self) -> Locator:
+        return self.page.get_by_test_id("rates-error")
 
     @property
     def comparison_filter(self) -> Locator:

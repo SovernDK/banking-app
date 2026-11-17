@@ -73,6 +73,25 @@ SPENDING_PER_DAY_VS = Text(
 )
 THIS_PERIOD = Text(pl="Ten okres", en="This period", ja="今期")
 
+CURRENCY = Text(pl="Waluta", en="Currency", ja="通貨")
+RATES_UNAVAILABLE = Text(
+    pl="Nie udało się pobrać kursów walut; kwoty mogą korzystać ze starszych kursów.",
+    en="Exchange rates could not be updated; amounts may use older rates.",
+    ja="為替レートを更新できませんでした。金額は古いレートで表示される場合があります。",
+)
+NOT_CONVERTED = Plural(
+    pl=(
+        "Pominięto {count} płatność: brak kursu {currency} z jej dnia.",
+        "Pominięto {count} płatności: brak kursów {currency} z ich dni.",
+        "Pominięto {count} płatności: brak kursów {currency} z ich dni.",
+    ),
+    en=(
+        "{count} payment is left out: no exchange rate to {currency} for its day.",
+        "{count} payments are left out: no exchange rate to {currency} for their days.",
+    ),
+    ja="{count}件の支払いは、その日の{currency}への為替レートがないため除外されています。",
+)
+
 COUNTERPARTY = Text(pl="Kontrahent", en="Counterparty", ja="取引先")
 COUNTERPARTIES = Text(pl="Kontrahenci", en="Counterparties", ja="取引先")
 CATEGORY = Text(pl="Kategoria", en="Category", ja="カテゴリ")

@@ -3,17 +3,17 @@ from typing import Any
 
 import pytest
 
-from app.bank_profiles import generic
-from app.banking.models import Transaction
 from app.categories import CategoryBook
+from app.payment_methods import PaymentMethod
+from app.payments import Payment
 from app.spending_filter import ALL, UNCATEGORISED, SpendingFilter, counterparty_names
-from tests.fakes.enable_banking import debit
+from tests.fakes.payments import payment
 
 DAY = date(2026, 11, 15)
 
 
-def _debit(amount: str = "10", **fields: Any) -> Transaction:
-    return Transaction.model_validate(debit(amount, DAY, **fields))
+def _paid(amount: str = "10", **fields: Any) -> Payment:
+    return payment(amount, DAY, **fields)
 
 
 def _book_with_groceries() -> tuple[CategoryBook, str]:
@@ -25,23 +25,19 @@ def _book_with_groceries() -> tuple[CategoryBook, str]:
 
 def _matching(spending_filter: SpendingFilter, book: CategoryBook | None = None) -> list[int]:
     book = book or _book_with_groceries()[0]
-    return [
-        index
-        for index, transaction in enumerate(TRANSACTIONS)
-        if spending_filter.matches(transaction, generic.payment_method, book)
-    ]
+    return [index for index, paid in enumerate(PAYMENTS) if spending_filter.matches(paid, book)]
 
 
-TRANSACTIONS = [
-    _debit(creditor="Netflix"),
-    _debit(creditor="NETFLIX "),
-    _debit(creditor="Biedronka"),
-    _debit(family="CCRD", sub_family="CWDL"),
-    _debit(creditor="Orlen"),
+PAYMENTS = [
+    _paid(payee="Netflix"),
+    _paid(payee="NETFLIX"),
+    _paid(payee="Biedronka"),
+    _paid(method=PaymentMethod.ATM_WITHDRAWAL),
+    _paid(name="Orlen"),
 ]
 
 
-def test_all_matches_every_transaction() -> None:
+def test_all_matches_every_payment() -> None:
     assert _matching(ALL) == [0, 1, 2, 3, 4]
 
 
@@ -71,15 +67,16 @@ def test_filter_refuses_a_counterparty_and_a_category_at_once() -> None:
 
 
 def test_counterparty_names_cover_all_time_spending_merged_biggest_first() -> None:
-    transactions = [
-        _debit("5", creditor="Netflix"),
-        _debit("5", creditor="NETFLIX"),
-        _debit("30", creditor="Orlen"),
-        _debit("3", family="CCRD", sub_family="CWDL"),
-        Transaction.model_validate(debit("99", date(2020, 1, 1), creditor="Landlord")),
+    payments = [
+        _paid("5", payee="Netflix"),
+        _paid("5", payee="NETFLIX"),
+        _paid("30", payee="Orlen"),
+        _paid("3", method=PaymentMethod.ATM_WITHDRAWAL),
+        payment("99", date(2020, 1, 1), payee="Landlord"),
+        payment("500", DAY, currency="PLN", payee="Żabka"),
     ]
 
-    assert counterparty_names(transactions, "EUR", generic.payment_method) == [
+    assert counterparty_names(payments, "EUR") == [
         "Landlord",
         "Orlen",
         "Netflix",

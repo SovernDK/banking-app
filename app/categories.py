@@ -7,8 +7,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, StringConstraints, TypeAdapter, ValidationError
 
-from app.banking.models import Transaction
 from app.json_file import write_atomically
+from app.payments import squash_spaces
 
 logger = logging.getLogger(__name__)
 
@@ -27,23 +27,13 @@ class DuplicateCategoryError(ValueError):
         self.name = name
 
 
-def _clean(text: str) -> str:
-    return " ".join(text.split())
-
-
 def _match_key(name: str) -> str:
-    return _clean(name).casefold()
-
-
-def counterparty_name(transaction: Transaction) -> str | None:
-    creditor = transaction.creditor.name if transaction.creditor else None
-    candidates = [creditor, *transaction.remittance_information[:1]]
-    return next((_clean(text) for text in candidates if text and text.strip()), None)
+    return squash_spaces(name).casefold()
 
 
 def _valid_name(name: str) -> str:
     try:
-        return _clean(TypeAdapter(CategoryName).validate_python(name))
+        return squash_spaces(TypeAdapter(CategoryName).validate_python(name))
     except ValidationError as error:
         raise InvalidCategoryNameError("A category name needs 1 to 40 characters.") from error
 

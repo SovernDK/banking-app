@@ -2,20 +2,15 @@ from collections.abc import Callable
 
 from app.bank_profiles import generic, mock_aspsp
 from app.banking.models import Transaction
-from app.categories import counterparty_name
-from app.payment_methods import PaymentMethod
+from app.payments import Payment
 
-BankProfile = Callable[[Transaction], PaymentMethod]
+BankProfile = Callable[[Transaction], Payment | None]
+"""Reads one bank's transaction into the payment Yiji keeps; None for anything not kept."""
 
 _PROFILES: dict[tuple[str, str], BankProfile] = {
-    ("mock aspsp", "FI"): mock_aspsp.payment_method,
+    ("mock aspsp", "FI"): mock_aspsp.to_payment,
 }
 
 
 def profile_for(aspsp_name: str, aspsp_country: str) -> BankProfile:
-    return _PROFILES.get((aspsp_name.casefold(), aspsp_country), generic.payment_method)
-
-
-def transaction_name(transaction: Transaction, profile: BankProfile) -> str:
-    """The counterparty name; a nameless payment, e.g. a cash withdrawal, goes by payment method."""
-    return counterparty_name(transaction) or profile(transaction)
+    return _PROFILES.get((aspsp_name.casefold(), aspsp_country), generic.to_payment)

@@ -5,15 +5,21 @@ from functools import lru_cache
 
 import httpx2
 
+from app.bank_profiles import BankProfile, profile_for
 from app.banking.client import (
     BankRequestRejectedError,
     BankSessionExpiredError,
     EnableBankingClient,
 )
+from app.banking.history import HistoryStore
 from app.banking.models import Transaction
 from app.banking.state import new_state, nonce_of
 from app.banking.store import STORE_FILENAME, BankStore, StoredSession, StoredState
 from app.config import MissingCredentialsError, Settings, get_settings
+from app.database import DATABASE_FILENAME
+from app.payments import Payment
+from app.rates.book import ExchangeRates, RateBook
+from app.rates.client import ExchangeRateClient
 from app.spending import LONGEST_PERIOD, history_start
 
 
@@ -34,13 +40,20 @@ class BankingService:
         self,
         client: EnableBankingClient,
         store: BankStore,
+        history: HistoryStore,
+        rate_book: RateBook,
+        profile: BankProfile,
         settings: Settings,
         now: Callable[[], datetime] = _local_now,
     ) -> None:
         self._client = client
         self._store = store
+        self._history = history
+        self._rate_book = rate_book
+        self._profile = profile
         self._settings = settings
         self._now = now
+        self._refresh_after = timedelta(minutes=settings.transactions_refresh_minutes)
 
     def today(self) -> date:
         return self._now().date()
@@ -75,49 +88,78 @@ class BankingService:
         stored.replace_session(
             StoredSession(
                 account_uids=[account.uid for account in session.accounts],
+                account_keys={account.uid: account.key for account in session.accounts},
                 valid_until=session.access.valid_until,
             )
         )
         self._store.save(stored)
 
-    def transactions(self) -> list[Transaction]:
+    def refresh(self, *, force: bool = False) -> None:
+        """Stores what the bank has booked since the last sync (less the overlap for late
+        bookings), or everything it serves after a new connection. Without `force` it does
+        nothing while the last sync is recent."""
         stored = self._store.load()
         session = self._live_session(stored)
-        refresh_after = timedelta(minutes=self._settings.transactions_refresh_minutes)
-        if stored.has_fresh_cache(self._now(), refresh_after):
-            return stored.transactions
+        now = self._now()
+        if not force and stored.synced_within(now, self._refresh_after):
+            return
+        if stored.synced_at is None:
+            wanted_from = history_start(self.today())
+        else:
+            overlap = timedelta(days=self._settings.sync_overlap_days)
+            wanted_from = stored.synced_at.date() - overlap
         try:
-            transactions = [
-                transaction
-                for account_uid in session.account_uids
-                for transaction in self._history(account_uid)
-            ]
+            for account_uid in session.account_uids:
+                served_from, transactions = self._fetch(account_uid, wanted_from)
+                payments = [
+                    payment
+                    for transaction in transactions
+                    if (payment := self._profile(transaction)) is not None
+                ]
+                self._history.replace_from(session.account_key(account_uid), served_from, payments)
         except BankSessionExpiredError:
             stored.replace_session(None)
             self._store.save(stored)
             raise
-        stored.cache_transactions(transactions, self._now())
+        stored.synced_at = now
         self._store.save(stored)
-        return transactions
 
-    def _history(self, account_uid: str) -> list[Transaction]:
-        """As much history as the bank serves. Banks cap how far back they go (often 90 days),
-        so a refused range is retried shorter; days the bank won't give count as no spending."""
+    def payments(self) -> list[Payment]:
+        return self._history.payments()
+
+    def refresh_rates(self, payments: list[Payment]) -> None:
+        """Fetches the exchange rates the payments and the display currencies still lack."""
+        if not payments:
+            return
+        self._rate_book.refresh(
+            {payment.currency for payment in payments} | set(self._settings.display_currencies),
+            min(payment.booked_on for payment in payments),
+            self.today(),
+            self._now(),
+            self._refresh_after,
+        )
+
+    def exchange_rates(self) -> ExchangeRates:
+        return self._rate_book.rates()
+
+    def _fetch(self, account_uid: str, wanted_from: date) -> tuple[date, list[Transaction]]:
+        """Transactions from `wanted_from`, or from as near it as the bank allows, and the day
+        they start from. Banks cap how far back they go (often 90 days), so a refused range is
+        retried shorter."""
         today = self.today()
         fallback_days = self._settings.transactions_fallback_history_days
-        oldest_first = sorted(
-            {
-                history_start(today),
-                today - timedelta(days=fallback_days - 1),
-                today - timedelta(days=LONGEST_PERIOD.days - 1),
-            }
-        )
+        shorter = {
+            history_start(today),
+            today - timedelta(days=fallback_days - 1),
+            today - timedelta(days=LONGEST_PERIOD.days - 1),
+        }
+        oldest_first = sorted({wanted_from, *(day for day in shorter if day > wanted_from)})
         for date_from in oldest_first[:-1]:
             try:
-                return self._client.fetch_transactions(account_uid, date_from)
+                return date_from, self._client.fetch_transactions(account_uid, date_from)
             except BankRequestRejectedError:
                 continue
-        return self._client.fetch_transactions(account_uid, oldest_first[-1])
+        return oldest_first[-1], self._client.fetch_transactions(account_uid, oldest_first[-1])
 
 
 @lru_cache
@@ -129,8 +171,22 @@ def _build_banking_service() -> BankingService:
         timeout=settings.enable_banking_timeout_seconds,
     )
     client = EnableBankingClient(http=http, app_id=app_id, key_path=key_path)
+    rates_http = httpx2.Client(
+        base_url=str(settings.exchange_rates_api_url),
+        timeout=settings.exchange_rates_timeout_seconds,
+    )
+    database = settings.data_dir / DATABASE_FILENAME
     return BankingService(
-        client=client, store=BankStore(settings.data_dir / STORE_FILENAME), settings=settings
+        client=client,
+        store=BankStore(settings.data_dir / STORE_FILENAME),
+        history=HistoryStore(database),
+        rate_book=RateBook(
+            database, ExchangeRateClient(rates_http), settings.exchange_rate_lookback_days
+        ),
+        profile=profile_for(
+            settings.enable_banking_aspsp_name, settings.enable_banking_aspsp_country
+        ),
+        settings=settings,
     )
 
 

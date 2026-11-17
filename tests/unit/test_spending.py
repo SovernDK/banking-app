@@ -3,7 +3,6 @@ from decimal import Decimal
 
 import pytest
 
-from app.banking.models import Transaction
 from app.spending import (
     Comparison,
     DailySpending,
@@ -18,26 +17,9 @@ from app.spending import (
     spending_by,
     top_shares,
 )
+from tests.fakes.payments import payment
 
 TODAY = date(2026, 11, 15)
-
-
-def _transaction(
-    amount: str,
-    *,
-    indicator: str = "DBIT",
-    status: str = "BOOK",
-    currency: str = "EUR",
-    **dates: date,
-) -> Transaction:
-    return Transaction.model_validate(
-        {
-            "transaction_amount": {"amount": amount, "currency": currency},
-            "credit_debit_indicator": indicator,
-            "status": status,
-            **dates,
-        }
-    )
 
 
 @pytest.mark.parametrize(
@@ -52,56 +34,29 @@ def test_window_is_zero_filled_and_ends_today(period: Period, expected_days: int
 
 
 def test_sums_debits_per_day() -> None:
-    transactions = [
-        _transaction("10.50", booking_date=TODAY),
-        _transaction("4.50", booking_date=TODAY),
-        _transaction("7", booking_date=date(2026, 11, 14)),
+    payments = [
+        payment("10.50", TODAY),
+        payment("4.50", TODAY),
+        payment("7", date(2026, 11, 14)),
     ]
 
-    spending = daily_spending(transactions, "EUR", Period.LAST_WEEK, TODAY)
+    spending = daily_spending(payments, "EUR", Period.LAST_WEEK, TODAY)
 
     assert spending[-1].amount == Decimal("15.00")
     assert spending[-2].amount == Decimal("7")
 
 
-def test_ignores_income_and_cancelled_or_rejected_payments() -> None:
-    transactions = [
-        _transaction("100", indicator="CRDT", booking_date=TODAY),
-        _transaction("20", status="RJCT", booking_date=TODAY),
-        _transaction("30", status="CNCL", booking_date=TODAY),
-        _transaction("5", status="PDNG", transaction_date=TODAY),
-    ]
-
-    assert daily_spending(transactions, "EUR", Period.LAST_WEEK, TODAY)[-1].amount == Decimal("5")
-
-
-def test_counts_absolute_value_of_negative_debit_amounts() -> None:
-    transactions = [_transaction("-12", booking_date=TODAY)]
-
-    assert daily_spending(transactions, "EUR", Period.LAST_WEEK, TODAY)[-1].amount == Decimal("12")
-
-
 def test_includes_first_window_day_and_excludes_the_day_before() -> None:
     first_day = date(2026, 11, 9)
-    transactions = [
-        _transaction("1", booking_date=first_day),
-        _transaction("99", booking_date=date(2026, 11, 8)),
+    payments = [
+        payment("1", first_day),
+        payment("99", date(2026, 11, 8)),
     ]
 
-    spending = daily_spending(transactions, "EUR", Period.LAST_WEEK, TODAY)
+    spending = daily_spending(payments, "EUR", Period.LAST_WEEK, TODAY)
 
     assert spending[0] == DailySpending(day=first_day, amount=Decimal("1"))
     assert sum(entry.amount for entry in spending) == Decimal("1")
-
-
-def test_falls_back_to_value_date_then_transaction_date() -> None:
-    transactions = [
-        _transaction("2", value_date=TODAY),
-        _transaction("3", transaction_date=TODAY),
-        _transaction("50"),
-    ]
-
-    assert daily_spending(transactions, "EUR", Period.LAST_WEEK, TODAY)[-1].amount == Decimal("5")
 
 
 def test_period_parses_from_url_value_and_defaults_to_last_month() -> None:
@@ -112,63 +67,58 @@ def test_period_parses_from_url_value_and_defaults_to_last_month() -> None:
 
 
 def test_spending_currency_is_the_one_with_the_largest_spending() -> None:
-    transactions = [
-        _transaction("10", currency="EUR", booking_date=TODAY),
-        _transaction("50", currency="PLN", booking_date=TODAY),
-        _transaction("100", indicator="CRDT", currency="USD", booking_date=TODAY),
+    payments = [
+        payment("10", TODAY, currency="EUR"),
+        payment("50", TODAY, currency="PLN"),
     ]
 
-    assert main_currency(transactions) == "PLN"
+    assert main_currency(payments) == "PLN"
     assert main_currency([]) is None
 
 
-def test_only_sums_transactions_in_the_requested_currency() -> None:
-    transactions = [
-        _transaction("10", currency="EUR", booking_date=TODAY),
-        _transaction("50", currency="PLN", booking_date=TODAY),
+def test_only_sums_payments_in_the_requested_currency() -> None:
+    payments = [
+        payment("10", TODAY, currency="EUR"),
+        payment("50", TODAY, currency="PLN"),
     ]
 
-    assert daily_spending(transactions, "PLN", Period.LAST_WEEK, TODAY)[-1].amount == Decimal("50")
+    assert daily_spending(payments, "PLN", Period.LAST_WEEK, TODAY)[-1].amount == Decimal("50")
 
 
 def test_spending_by_groups_the_period_spending_biggest_first() -> None:
-    transactions = [
-        _transaction("4", booking_date=TODAY),
-        _transaction("3", booking_date=TODAY),
-        _transaction("30", booking_date=TODAY),
-        _transaction("20", status="RJCT", booking_date=TODAY),
-        _transaction("12", currency="PLN", booking_date=TODAY),
-        _transaction("40", booking_date=date(2026, 10, 1)),
+    payments = [
+        payment("4", TODAY),
+        payment("3", TODAY),
+        payment("30", TODAY),
+        payment("12", TODAY, currency="PLN"),
+        payment("40", date(2026, 10, 1)),
     ]
 
     shares = spending_by(
-        transactions,
+        payments,
         "EUR",
         Period.LAST_WEEK,
         TODAY,
-        key=lambda transaction: "big" if transaction.transaction_amount.amount > 5 else "small",
+        key=lambda paid: "big" if paid.amount > 5 else "small",
     )
 
     assert shares == [Share("big", Decimal("30")), Share("small", Decimal("7"))]
 
 
-def test_all_time_spending_by_groups_every_spending_regardless_of_date() -> None:
-    transactions = [
-        _transaction("4", booking_date=TODAY),
-        _transaction("40", booking_date=date(2025, 1, 1)),
-        _transaction("6"),
-        _transaction("20", status="CNCL", booking_date=TODAY),
-        _transaction("50", indicator="CRDT", booking_date=TODAY),
-        _transaction("12", currency="PLN", booking_date=TODAY),
+def test_all_time_spending_by_groups_every_payment_in_the_currency() -> None:
+    payments = [
+        payment("4", TODAY),
+        payment("40", date(2025, 1, 1)),
+        payment("12", TODAY, currency="PLN"),
     ]
 
     shares = all_time_spending_by(
-        transactions,
+        payments,
         "EUR",
-        key=lambda transaction: "big" if transaction.transaction_amount.amount > 5 else "small",
+        key=lambda paid: "big" if paid.amount > 5 else "small",
     )
 
-    assert shares == [Share("big", Decimal("46")), Share("small", Decimal("4"))]
+    assert shares == [Share("big", Decimal("40")), Share("small", Decimal("4"))]
 
 
 @pytest.mark.parametrize(

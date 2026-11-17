@@ -7,7 +7,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Generic, TypeVar
 
-from app.banking.models import Transaction
+from app.payments import Payment
 
 
 class Period(StrEnum):
@@ -79,18 +79,10 @@ class DailySpending:
     amount: Decimal
 
 
-def _is_spending(transaction: Transaction) -> bool:
-    return transaction.credit_debit_indicator == "DBIT" and transaction.status not in {
-        "CNCL",
-        "RJCT",
-    }
-
-
-def main_currency(transactions: list[Transaction]) -> str | None:
+def main_currency(payments: list[Payment]) -> str | None:
     totals: dict[str, Decimal] = defaultdict(Decimal)
-    for transaction in filter(_is_spending, transactions):
-        amount = transaction.transaction_amount
-        totals[amount.currency] += abs(amount.amount)
+    for payment in payments:
+        totals[payment.currency] += payment.amount
     return max(totals, key=totals.__getitem__, default=None)
 
 
@@ -100,43 +92,34 @@ class Share(Generic[Key]):
     amount: Decimal
 
 
-def _spending(
-    transactions: list[Transaction], currency: str
-) -> Iterator[tuple[Transaction, Decimal]]:
-    for transaction in filter(_is_spending, transactions):
-        amount = transaction.transaction_amount
-        if amount.currency == currency:
-            # Banks differ on whether debit amounts are signed; the indicator carries the direction.
-            yield transaction, abs(amount.amount)
+def _in_currency(payments: Iterable[Payment], currency: str) -> Iterator[Payment]:
+    return (payment for payment in payments if payment.currency == currency)
 
 
-def _spending_in_period(
-    transactions: list[Transaction], currency: str, period: Period, today: date
-) -> Iterator[tuple[Transaction, date, Decimal]]:
+def _in_period(
+    payments: list[Payment], currency: str, period: Period, today: date
+) -> Iterator[Payment]:
     first_day = today - timedelta(days=period.days - 1)
-    for transaction, amount in _spending(transactions, currency):
-        spent_on = transaction.spent_on
-        if spent_on and first_day <= spent_on <= today:
-            yield transaction, spent_on, amount
+    for payment in _in_currency(payments, currency):
+        if first_day <= payment.booked_on <= today:
+            yield payment
 
 
-def _shares(
-    spending: Iterable[tuple[Transaction, Decimal]], key: Callable[[Transaction], Key]
-) -> list[Share[Key]]:
+def _shares(payments: Iterable[Payment], key: Callable[[Payment], Key]) -> list[Share[Key]]:
     totals: dict[Key, Decimal] = defaultdict(Decimal)
-    for transaction, amount in spending:
-        totals[key(transaction)] += amount
+    for payment in payments:
+        totals[key(payment)] += payment.amount
     shares = [Share(key=group, amount=amount) for group, amount in totals.items()]
     return sorted(shares, key=lambda share: share.amount, reverse=True)
 
 
 def daily_spending(
-    transactions: list[Transaction], currency: str, period: Period, today: date
+    payments: list[Payment], currency: str, period: Period, today: date
 ) -> list[DailySpending]:
     first_day = today - timedelta(days=period.days - 1)
     totals: dict[date, Decimal] = defaultdict(Decimal)
-    for _, spent_on, amount in _spending_in_period(transactions, currency, period, today):
-        totals[spent_on] += amount
+    for payment in _in_period(payments, currency, period, today):
+        totals[payment.booked_on] += payment.amount
     return [
         DailySpending(day=day, amount=totals[day])
         for day in (first_day + timedelta(days=offset) for offset in range(period.days))
@@ -144,22 +127,21 @@ def daily_spending(
 
 
 def spending_by(
-    transactions: list[Transaction],
+    payments: list[Payment],
     currency: str,
     period: Period,
     today: date,
-    key: Callable[[Transaction], Key],
+    key: Callable[[Payment], Key],
 ) -> list[Share[Key]]:
     """Spending per key, biggest first."""
-    in_period = _spending_in_period(transactions, currency, period, today)
-    return _shares(((transaction, amount) for transaction, _, amount in in_period), key)
+    return _shares(_in_period(payments, currency, period, today), key)
 
 
 def all_time_spending_by(
-    transactions: list[Transaction], currency: str, key: Callable[[Transaction], Key]
+    payments: list[Payment], currency: str, key: Callable[[Payment], Key]
 ) -> list[Share[Key]]:
-    """Spending per key over every transaction, dated or not, biggest first."""
-    return _shares(_spending(transactions, currency), key)
+    """Spending per key over every payment, biggest first."""
+    return _shares(_in_currency(payments, currency), key)
 
 
 def top_shares(shares: list[Share[Key]], limit: int) -> tuple[list[Share[Key]], Decimal]:

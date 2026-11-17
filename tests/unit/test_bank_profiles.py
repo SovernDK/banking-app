@@ -1,18 +1,20 @@
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 import pytest
 
-from app.bank_profiles import generic, mock_aspsp, profile_for, transaction_name
+from app.bank_profiles import generic, mock_aspsp, profile_for
 from app.banking.models import Transaction
 from app.payment_methods import PaymentMethod
+from app.payments import Payment, display_name
 from tests.fakes.enable_banking import debit
 
 DAY = date(2026, 11, 15)
 
 
-def _debit(**fields: Any) -> Transaction:
-    return Transaction.model_validate(debit("10", DAY, **fields))
+def _debit(amount: str = "10", **fields: Any) -> Transaction:
+    return Transaction.model_validate(debit(amount, DAY, **fields))
 
 
 @pytest.mark.parametrize(
@@ -56,26 +58,88 @@ def test_mock_aspsp_payment_without_creditor_or_code_is_other() -> None:
     assert mock_aspsp.payment_method(_debit()) is PaymentMethod.OTHER
 
 
+def test_generic_profile_keeps_only_name_payee_amount_currency_day_and_method() -> None:
+    transaction = _debit(
+        "-12.50",
+        creditor="  Biedronka   Sp. ",
+        remittance=["Card  1234 ", "ref 7"],
+        family="CCRD",
+        sub_family="POSD",
+    )
+
+    assert generic.to_payment(transaction) == Payment(
+        name="Card 1234",
+        payee="Biedronka Sp.",
+        amount=Decimal("12.50"),
+        currency="EUR",
+        booked_on=DAY,
+        payment_method=PaymentMethod.CARD_PAYMENT,
+    )
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        pytest.param({"indicator": "CRDT"}, id="income"),
+        pytest.param({"status": "PDNG"}, id="pending"),
+        pytest.param({"status": "CNCL"}, id="cancelled"),
+        pytest.param({"status": "RJCT"}, id="rejected"),
+    ],
+)
+def test_generic_profile_keeps_only_booked_spending(fields: dict[str, Any]) -> None:
+    assert generic.to_payment(_debit(**fields)) is None
+
+
+def test_generic_profile_skips_a_payment_of_nothing() -> None:
+    assert generic.to_payment(_debit("0.00")) is None
+
+
+def test_generic_profile_dates_by_value_date_when_the_bank_gives_no_booking_date() -> None:
+    raw = debit("10", DAY)
+    del raw["booking_date"]
+
+    assert generic.to_payment(Transaction.model_validate(raw)) is None
+    raw["value_date"] = DAY.isoformat()
+    payment = generic.to_payment(Transaction.model_validate(raw))
+    assert payment is not None and payment.booked_on == DAY
+
+
+def test_generic_profile_cuts_overlong_names_to_the_iso_line_length() -> None:
+    payment = generic.to_payment(_debit(creditor="x" * 300, remittance=[" "]))
+
+    assert payment is not None
+    assert payment.payee == "x" * 140
+    assert payment.name is None
+
+
+def test_mock_aspsp_profile_keeps_its_own_payment_method() -> None:
+    payment = mock_aspsp.to_payment(_debit(creditor="Aino Korhonen"))
+
+    assert payment is not None and payment.payment_method is PaymentMethod.TRANSFER
+
+
 def test_profile_is_chosen_by_bank_name_and_country() -> None:
-    assert profile_for("Mock ASPSP", "FI") is mock_aspsp.payment_method
-    assert profile_for("mock aspsp", "FI") is mock_aspsp.payment_method
+    assert profile_for("Mock ASPSP", "FI") is mock_aspsp.to_payment
+    assert profile_for("mock aspsp", "FI") is mock_aspsp.to_payment
+
+
+@pytest.mark.parametrize(("name", "country"), [("Mock ASPSP", "SE"), ("PKO BP", "PL")])
+def test_bank_without_its_own_profile_uses_the_generic_one(name: str, country: str) -> None:
+    assert profile_for(name, country) is generic.to_payment
 
 
 @pytest.mark.parametrize(
     ("fields", "expected"),
     [
         ({"creditor": "  Netflix   Inc ", "family": "CCRD", "sub_family": "POSD"}, "Netflix Inc"),
-        ({"remittance": ["Spotify Premium"]}, "Spotify Premium"),
+        ({"creditor": "   ", "remittance": ["Spotify Premium"]}, "Spotify Premium"),
         ({"family": "CCRD", "sub_family": "CWDL"}, "ATM withdrawal"),
         ({}, "Other"),
     ],
 )
-def test_transaction_is_named_after_its_counterparty_else_its_payment_method(
+def test_payment_is_named_after_its_payee_else_its_description_else_its_method(
     fields: dict[str, Any], expected: str
 ) -> None:
-    assert transaction_name(_debit(**fields), generic.payment_method) == expected
+    payment = generic.to_payment(_debit(**fields))
 
-
-@pytest.mark.parametrize(("name", "country"), [("Mock ASPSP", "SE"), ("PKO BP", "PL")])
-def test_bank_without_its_own_profile_uses_the_generic_one(name: str, country: str) -> None:
-    assert profile_for(name, country) is generic.payment_method
+    assert payment is not None and display_name(payment) == expected

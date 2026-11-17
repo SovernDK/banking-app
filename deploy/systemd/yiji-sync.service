@@ -1,0 +1,11 @@
+# Template: set WorkingDirectory to the Yiji checkout, then install as described in
+# docs/wiki.html ("Daily sync"). Exit code 2 means the bank needs reconnecting in Yiji.
+[Unit]
+Description=Store the latest Yiji bank payments and exchange rates
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/yiji
+ExecStart=/usr/bin/env uv run --no-dev python -m app.sync

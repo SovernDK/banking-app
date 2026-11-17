@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Yiji sync every day at midnight
+
+[Timer]
+OnCalendar=*-*-* 00:00:00
+# Runs a sync missed while the server was off as soon as it is back.
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

@@ -1,6 +1,7 @@
 from app.bank_profiles import generic
 from app.banking.models import Transaction
 from app.payment_methods import PaymentMethod
+from app.payments import Payment
 
 
 def payment_method(transaction: Transaction) -> PaymentMethod:
@@ -10,3 +11,7 @@ def payment_method(transaction: Transaction) -> PaymentMethod:
     if method is PaymentMethod.OTHER and transaction.creditor and transaction.creditor.name:
         return PaymentMethod.TRANSFER
     return method
+
+
+def to_payment(transaction: Transaction) -> Payment | None:
+    return generic.to_payment(transaction, payment_method)

@@ -13,6 +13,13 @@ class AuthResponse(BaseModel):
 
 class Account(BaseModel):
     uid: str = Field(min_length=1)
+    identification_hash: str | None = Field(
+        default=None, min_length=1, description="Names the account the same way in every session."
+    )
+
+    @property
+    def key(self) -> str:
+        return self.identification_hash or self.uid
 
 
 class SessionAccess(BaseModel):
@@ -51,10 +58,6 @@ class Transaction(BaseModel):
     creditor: Party | None = None
     remittance_information: list[str] = []
     bank_transaction_code: BankTransactionCode | None = None
-
-    @property
-    def spent_on(self) -> date | None:
-        return self.booking_date or self.value_date or self.transaction_date
 
 
 class TransactionsPage(BaseModel):

@@ -1,9 +1,8 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from app.bank_profiles import BankProfile, transaction_name
-from app.banking.models import Transaction
-from app.categories import CategoryBook, counterparty_name
+from app.categories import CategoryBook
+from app.payments import Payment, counterparty_name, display_name
 from app.spending import all_time_spending_by, merge_spellings
 
 UNCATEGORISED = "uncategorised"
@@ -40,12 +39,11 @@ class SpendingFilter:
             return cls(category_id=category)
         return ALL
 
-    def matches(self, transaction: Transaction, profile: BankProfile, book: CategoryBook) -> bool:
+    def matches(self, payment: Payment, book: CategoryBook) -> bool:
         if self.counterparty:
-            name = transaction_name(transaction, profile)
-            return name.casefold() == self.counterparty.casefold()
+            return display_name(payment).casefold() == self.counterparty.casefold()
         if self.category_id:
-            category = book.category_of(counterparty_name(transaction))
+            category = book.category_of(counterparty_name(payment))
             return (category.id if category else UNCATEGORISED) == self.category_id
         return True
 
@@ -68,11 +66,7 @@ class SpendingFilter:
 ALL = SpendingFilter()
 
 
-def counterparty_names(
-    transactions: list[Transaction], currency: str, profile: BankProfile
-) -> list[str]:
+def counterparty_names(payments: list[Payment], currency: str) -> list[str]:
     """Every name spending went to, case variants merged, biggest all-time spending first."""
-    shares = all_time_spending_by(
-        transactions, currency, lambda transaction: transaction_name(transaction, profile)
-    )
+    shares = all_time_spending_by(payments, currency, display_name)
     return [share.key for share in merge_spellings(shares)]

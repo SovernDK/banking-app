@@ -5,10 +5,8 @@ from urllib.parse import urlencode
 from nicegui import run, ui
 
 from app import texts
-from app.bank_profiles import BankProfile, profile_for, transaction_name
 from app.banking.client import BankApiError, BankSessionExpiredError
 from app.banking.errors import BankErrorCode
-from app.banking.models import Transaction
 from app.banking.service import BankingService, NotConnectedError, find_banking_service
 from app.categories import (
     CATEGORIES_FILENAME,
@@ -16,10 +14,12 @@ from app.categories import (
     CategoryStore,
     DuplicateCategoryError,
     InvalidCategoryNameError,
-    counterparty_name,
 )
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.i18n import Language
+from app.payments import Payment, counterparty_name, display_name
+from app.rates.book import convert_payments
+from app.rates.client import RatesUnavailableError
 from app.spending import (
     Comparison,
     Period,
@@ -45,6 +45,7 @@ from app.ui.components import (
     alert,
     chip,
     comparison_filter,
+    currency_filter,
     empty_state,
     overview_band,
     page_shell,
@@ -110,8 +111,17 @@ def _category_slices(
     return slices
 
 
+def _currency_options(settings: Settings, payments: list[Payment]) -> list[str]:
+    """The configured display currencies, then any other currency the payments came in."""
+    others = sorted({payment.currency for payment in payments} - set(settings.display_currencies))
+    return [*settings.display_currencies, *others]
+
+
 def _spending_view(
-    transactions: list[Transaction],
+    payments: list[Payment],
+    currency: str,
+    currencies: list[str],
+    default_currency: str,
     today: date,
     initial: Period,
     initial_comparison: Comparison,
@@ -119,35 +129,38 @@ def _spending_view(
     category_query: str | None,
     shell: PageShell,
     band: ui.column,
-    profile: BankProfile,
     store: CategoryStore,
     book: CategoryBook,
 ) -> None:
-    currency = main_currency(transactions)
     language = shell.language
-    if currency is None:
-        with band:
-            empty_state(texts.NO_RECENT_SPENDING(language))
-        return
     dark_mode = shell.dark_mode
-    spending = {period: daily_spending(transactions, currency, period, today) for period in Period}
+    spending = {period: daily_spending(payments, currency, period, today) for period in Period}
     selected = initial
     comparison = initial_comparison
 
     def spends_in(period: Period) -> bool:
         return any(entry.amount for entry in spending[period])
 
-    counterparties = counterparty_names(transactions, currency, profile)
+    counterparties = counterparty_names(payments, currency)
     spending_filter = SpendingFilter.parse(counterparty_query, category_query, counterparties, book)
 
-    def show_url() -> None:
+    def url(shown_currency: str) -> str:
+        chosen_currency = {"currency": shown_currency} if shown_currency != default_currency else {}
         query = urlencode(
-            {"period": selected.value, **spending_filter.query(), "compare": comparison.value}
+            {
+                "period": selected.value,
+                **spending_filter.query(),
+                "compare": comparison.value,
+                **chosen_currency,
+            }
         )
+        return f"/?{query}"
+
+    def show_url() -> None:
         # Settings callbacks run inside dialogs that may already be gone; the band outlives them
         # and tells NiceGUI which browser to send the URL to.
         with band:
-            ui.navigate.history.replace(f"/?{query}")
+            ui.navigate.history.replace(url(currency))
 
     def overview_label() -> str:
         period = texts.PERIODS_IN_SENTENCE[selected](language)
@@ -163,11 +176,7 @@ def _spending_view(
     def show_overview() -> None:
         if spending_overview is None:
             return
-        matching = [
-            transaction
-            for transaction in transactions
-            if spending_filter.matches(transaction, profile, book)
-        ]
+        matching = [payment for payment in payments if spending_filter.matches(payment, book)]
         spending_overview.show(
             daily_spending(matching, currency, selected, today),
             daily_spending(matching, currency, selected, comparison.shift(today)),
@@ -190,12 +199,12 @@ def _spending_view(
             CategoryOption(id=UNCATEGORISED, name=texts.UNCATEGORISED(language), colour_slot=None),
         ]
 
-    def category_id_of(transaction: Transaction) -> str | None:
-        category = book.category_of(counterparty_name(transaction))
+    def category_id_of(payment: Payment) -> str | None:
+        category = book.category_of(counterparty_name(payment))
         return category.id if category else None
 
     def category_slices() -> list[DonutSlice]:
-        shares = spending_by(transactions, currency, selected, today, category_id_of)
+        shares = spending_by(payments, currency, selected, today, category_id_of)
         return _category_slices(shares, book, language)
 
     def assigned_category(counterparty: str) -> str | None:
@@ -270,7 +279,7 @@ def _spending_view(
             CounterpartyRow(
                 name=share.key, amount=share.amount, category_id=assigned_category(share.key)
             )
-            for share in all_time_spending_by(transactions, currency, counterparty_name)
+            for share in all_time_spending_by(payments, currency, counterparty_name)
             if share.key is not None
         ],
         category_names(),
@@ -293,13 +302,7 @@ def _spending_view(
         with ui.grid().classes("w-full grid-cols-1 md:grid-cols-2 gap-4"):
             with section(texts.COUNTERPARTIES(language), currency):
                 counterparty_shares = merge_spellings(
-                    spending_by(
-                        transactions,
-                        currency,
-                        selected,
-                        today,
-                        lambda transaction: transaction_name(transaction, profile),
-                    )
+                    spending_by(payments, currency, selected, today, display_name)
                 )
                 Donut(
                     _counterparty_slices(counterparty_shares, language),
@@ -330,6 +333,11 @@ def _spending_view(
         show_url()
         show_overview()
 
+    def show_in(value: str) -> None:
+        # Every amount on the page changes; the filter sits at the top, so a reload costs no
+        # scroll position.
+        ui.navigate.to(url(value))
+
     def choose(value: SpendingFilter) -> None:
         nonlocal spending_filter
         spending_filter = value
@@ -340,6 +348,7 @@ def _spending_view(
         with ui.row().classes("w-full items-center gap-4"):
             period_filter(initial, select, language)
             comparison_filter(comparison, compare, language)
+            currency_filter(currencies, currency, show_in, language)
             filters = SpendingFilters(
                 counterparties, category_options(), spending_filter, choose, language
             )
@@ -353,11 +362,35 @@ def _spending_view(
     dark_mode.on_value_change(redraw)
 
 
+async def _payments_or_connect(
+    service: BankingService, language: Language
+) -> tuple[list[Payment], bool]:
+    """Brings the stored payments up to date when the bank allows; when it doesn't, says why and
+    keeps showing what was stored before. Also tells whether the bank needs connecting."""
+    needs_connection = False
+    try:
+        await run.io_bound(service.refresh)
+    except NotConnectedError:
+        needs_connection = True
+    except BankSessionExpiredError:
+        alert(texts.BANK_ERRORS[BankErrorCode.SESSION_EXPIRED](language))
+        needs_connection = True
+    except BankApiError:
+        alert(texts.BANK_ERRORS[BankErrorCode.BANK_UNAVAILABLE](language))
+    payments = await run.io_bound(service.payments)
+    if needs_connection and not payments:
+        empty_state(texts.NO_TRANSACTIONS(language))
+    if needs_connection:
+        _connect_button(service, language)
+    return payments, needs_connection
+
+
 def register() -> None:
     @ui.page("/")
     async def dashboard_page(
         period: str | None = None,
         compare: str | None = None,
+        currency: str | None = None,
         counterparty: str | None = None,
         category: str | None = None,
         bank_error: str | None = None,
@@ -379,28 +412,34 @@ def register() -> None:
                     return
                 if error:
                     alert(texts.BANK_ERRORS[error](language))
+                payments, needs_connection = await _payments_or_connect(service, language)
+                default_currency = main_currency(payments)
+                if default_currency is None:
+                    if not needs_connection:
+                        empty_state(texts.NO_RECENT_SPENDING(language))
+                    return
                 try:
-                    transactions = await run.io_bound(service.transactions)
-                except NotConnectedError:
-                    empty_state(texts.NO_TRANSACTIONS(language))
-                    _connect_button(service, language)
-                    return
-                except BankSessionExpiredError:
-                    alert(texts.BANK_ERRORS[BankErrorCode.SESSION_EXPIRED](language))
-                    _connect_button(service, language)
-                    return
-                except BankApiError:
-                    alert(texts.BANK_ERRORS[BankErrorCode.BANK_UNAVAILABLE](language))
-                    return
+                    await run.io_bound(service.refresh_rates, payments)
+                except RatesUnavailableError:
+                    alert(texts.RATES_UNAVAILABLE(language), testid="rates-error")
+                rates = await run.io_bound(service.exchange_rates)
+                currencies = _currency_options(settings, payments)
+                shown_currency = currency if currency in currencies else default_currency
+                converted, skipped = convert_payments(payments, shown_currency, rates)
+                if skipped:
+                    alert(
+                        texts.NOT_CONVERTED(language, skipped, currency=shown_currency),
+                        testid="rates-error",
+                    )
                 store = CategoryStore(
                     settings.data_dir / CATEGORIES_FILENAME, settings.starter_categories
                 )
                 book = await run.io_bound(store.load)
-                profile = profile_for(
-                    settings.enable_banking_aspsp_name, settings.enable_banking_aspsp_country
-                )
             _spending_view(
-                transactions,
+                converted,
+                shown_currency,
+                currencies,
+                default_currency,
                 service.today(),
                 Period.parse(period),
                 Comparison.parse(compare),
@@ -408,7 +447,6 @@ def register() -> None:
                 category,
                 shell,
                 band,
-                profile,
                 store,
                 book,
             )

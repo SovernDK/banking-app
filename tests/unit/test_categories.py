@@ -1,39 +1,14 @@
-from datetime import date
 from pathlib import Path
 
 import pytest
 
-from app.banking.models import Transaction
 from app.categories import (
     CATEGORIES_FILENAME,
     CategoryBook,
     CategoryStore,
     DuplicateCategoryError,
     InvalidCategoryNameError,
-    counterparty_name,
 )
-from tests.fakes.enable_banking import debit
-
-DAY = date(2026, 11, 15)
-
-
-def _debit(creditor: str | None = None, remittance: list[str] | None = None) -> Transaction:
-    return Transaction.model_validate(debit("10", DAY, creditor=creditor, remittance=remittance))
-
-
-@pytest.mark.parametrize(
-    ("creditor", "remittance", "expected"),
-    [
-        ("Biedronka", ["Card 1234"], "Biedronka"),
-        (None, ["Rent  November ", "ref 7"], "Rent November"),
-        ("   ", ["Rent"], "Rent"),
-        (None, [], None),
-    ],
-)
-def test_counterparty_is_creditor_name_else_first_description_line(
-    creditor: str | None, remittance: list[str], expected: str | None
-) -> None:
-    assert counterparty_name(_debit(creditor, remittance)) == expected
 
 
 def test_rule_applies_to_names_differing_only_in_case_and_spacing() -> None:

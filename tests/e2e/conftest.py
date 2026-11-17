@@ -12,6 +12,7 @@ import pytest
 
 from app.banking.store import STORE_FILENAME
 from app.categories import CATEGORIES_FILENAME, CategoryBook, CategoryStore
+from app.database import DATABASE_FILENAME
 from app.tls import generate_private_key, write_private_key
 
 SERVER_START_TIMEOUT_SECONDS = 20
@@ -99,6 +100,14 @@ def fake_bank_url(servers: list[subprocess.Popen[bytes]]) -> str:
 
 
 @pytest.fixture(scope="session")
+def fake_rates_url(servers: list[subprocess.Popen[bytes]]) -> str:
+    origin = loopback_origin(free_port())
+    fake_app = "tests.fakes.exchange_rates:create_fake_exchange_rates"
+    servers.append(_serve(fake_app, origin, "/docs", {}, "--factory"))
+    return origin
+
+
+@pytest.fixture(scope="session")
 def test_key_file(tmp_path_factory: pytest.TempPathFactory) -> Path:
     path = tmp_path_factory.mktemp("keys") / "key.pem"
     write_private_key(generate_private_key(), path)
@@ -112,7 +121,11 @@ def app_data_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="session")
 def base_url(
-    serve_app: AppServer, fake_bank_url: str, test_key_file: Path, app_data_dir: Path
+    serve_app: AppServer,
+    fake_bank_url: str,
+    fake_rates_url: str,
+    test_key_file: Path,
+    app_data_dir: Path,
 ) -> str:
     port = free_port()
     url = loopback_origin(port)
@@ -122,6 +135,7 @@ def base_url(
         {
             "YIJI_ENABLE_BANKING_ENVIRONMENT": "sandbox",
             "YIJI_ENABLE_BANKING_API_URL": fake_bank_url,
+            "YIJI_EXCHANGE_RATES_API_URL": fake_rates_url,
             "YIJI_ENABLE_BANKING_SANDBOX_REDIRECT_URL": f"{url}/callback",
             "ENABLE_BANKING_SANDBOX_ID": "e2e-sandbox-app",
             "ENABLE_BANKING_SANDBOX_KEY_PATH": str(test_key_file),
@@ -130,16 +144,31 @@ def base_url(
 
 
 @pytest.fixture
-def fake_bank(fake_bank_url: str, app_data_dir: Path) -> Callable[..., None]:
-    """Resets the fake bank, the app's stored connection and its categories; call it to seed
-    bank data."""
+def fake_rates(fake_rates_url: str) -> Callable[..., None]:
+    """Resets the fake exchange rate service; call it to seed rates."""
+
+    def configure(**config: Any) -> None:
+        httpx2.post(f"{fake_rates_url}/_fake/configure", json=config).raise_for_status()
+
+    configure()
+    return configure
+
+
+@pytest.fixture
+def fake_bank(
+    fake_bank_url: str, fake_rates: Callable[..., None], app_data_dir: Path
+) -> Callable[..., None]:
+    """Resets the fake bank and the app's stored connection, history, rates and categories;
+    call it to seed bank data."""
 
     def configure(**config: Any) -> None:
         httpx2.post(f"{fake_bank_url}/_fake/configure", json=config).raise_for_status()
 
     configure()
-    (app_data_dir / STORE_FILENAME).unlink(missing_ok=True)
-    (app_data_dir / CATEGORIES_FILENAME).unlink(missing_ok=True)
+    for filename in (STORE_FILENAME, CATEGORIES_FILENAME, DATABASE_FILENAME):
+        (app_data_dir / filename).unlink(missing_ok=True)
+    for journal in app_data_dir.glob(f"{DATABASE_FILENAME}-*"):
+        journal.unlink()
     return configure
 
 
