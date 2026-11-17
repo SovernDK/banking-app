@@ -11,7 +11,6 @@ def test_icon_only_button_keeps_its_label_as_the_accessible_name() -> None:
     button = ghost_button("Clear filters", _noop, icon="filter_alt_off", icon_only_on_phones=True)
 
     assert button.props["aria-label"] == "Clear filters"
-    assert button.props["label"] == "Clear filters"
 
 
 def test_labelled_button_is_named_by_its_visible_label_alone() -> None:

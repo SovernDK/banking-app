@@ -187,9 +187,11 @@ def test_selected_option_is_drawn_in_dark_ink_in_dark_mode(dashboard: DashboardP
     expect(selected).to_have_css("color", "rgb(246, 247, 237)")
 
 
-@pytest.mark.parametrize("width", [1280, 650, 390])
+@pytest.mark.parametrize(
+    ("width", "clear_label_visible"), [(1280, True), (650, True), (390, False)]
+)
 def test_filters_share_one_row_below_the_toggles_on_any_screen(
-    dashboard: DashboardPage, width: int
+    dashboard: DashboardPage, width: int, clear_label_visible: bool
 ) -> None:
     """Between the sm and md breakpoints the fixed-width selects pushed Clear filters out of
     the band and the page scrolled sideways."""
@@ -199,18 +201,15 @@ def test_filters_share_one_row_below_the_toggles_on_any_screen(
     selects = [dashboard.counterparty_filter, dashboard.category_filter]
     clear = _box(dashboard.clear_filters_button)
 
-    toggles_bottom = max(_box(toggle)["y"] + _box(toggle)["height"] for toggle in toggles)
+    toggles_bottom = max(toggle["y"] + toggle["height"] for toggle in map(_box, toggles))
     for select in map(_box, selects):
         assert select["y"] >= toggles_bottom
         assert (
             clear["y"] < select["y"] + select["height"]
             and select["y"] < clear["y"] + clear["height"]
         )
-    clear_label = expect(dashboard.clear_filters_button.get_by_text("Clear filters"))
-    if width < 640:  # Tailwind's sm breakpoint
-        clear_label.to_be_hidden()
-    else:
-        clear_label.to_be_visible()
+    clear_label = dashboard.clear_filters_button.get_by_text("Clear filters")
+    expect(clear_label).to_be_visible(visible=clear_label_visible)
     assert not _overflows_sideways(dashboard.spending_filters)
     assert not _overflows_sideways(dashboard.page.locator("html"))
 

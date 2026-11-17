@@ -4,7 +4,7 @@ from nicegui import ui
 
 # Quasar's `.block` label and `.on-left` icon margin are unlayered (the label `!important`), so
 # only an important Tailwind utility, which sits in a layer, can override them.
-_LABEL_HIDDEN_ON_PHONES = "max-sm:[&_.block]:hidden! max-sm:[&_.on-left]:mr-0!"
+_LABEL_HIDDEN_ON_PHONES = "max-sm:[&_.q-icon~.block]:hidden! max-sm:[&_.on-left]:mr-0!"
 
 
 def ghost_button(
