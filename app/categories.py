@@ -22,7 +22,9 @@ class InvalidCategoryNameError(ValueError):
 
 
 class DuplicateCategoryError(ValueError):
-    pass
+    def __init__(self, name: str) -> None:
+        super().__init__(f"A category named {name} already exists.")
+        self.name = name
 
 
 def _clean(text: str) -> str:
@@ -70,7 +72,7 @@ class CategoryBook(BaseModel):
     def create(self, name: str) -> Category:
         name = _valid_name(name)
         if self.find_by_name(name):
-            raise DuplicateCategoryError(f"A category named {name} already exists.")
+            raise DuplicateCategoryError(name)
         category = Category(id=uuid.uuid4().hex, name=name)
         self.categories.append(category)
         return category
@@ -80,7 +82,7 @@ class CategoryBook(BaseModel):
         name = _valid_name(name)
         same_name = self.find_by_name(name)
         if same_name and same_name.id != category_id:
-            raise DuplicateCategoryError(f"A category named {name} already exists.")
+            raise DuplicateCategoryError(name)
         category.name = name
 
     def usage(self, category_id: str) -> int:

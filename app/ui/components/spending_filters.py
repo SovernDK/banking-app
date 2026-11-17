@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from nicegui import ui
 from nicegui.events import ValueChangeEventArguments
 
+from app import texts
+from app.i18n import Language
 from app.spending_filter import ALL, SpendingFilter
 from app.ui.components.ghost_button import ghost_button
 from app.ui.palette import LIGHT
@@ -43,6 +45,7 @@ def _category_option_template(categories: list[CategoryOption]) -> str:
 
 def _filter_select(
     options: dict[str, str],
+    all_label: str,
     label: str,
     testid: str,
     on_change: Callable[[ValueChangeEventArguments], None],
@@ -51,7 +54,7 @@ def _filter_select(
 ) -> ui.select:
     return (
         ui.select(
-            {_ALL_VALUE: "All", **options},
+            {_ALL_VALUE: all_label, **options},
             value=_ALL_VALUE,
             label=label,
             with_input=with_input,
@@ -72,19 +75,27 @@ class SpendingFilters:
         categories: list[CategoryOption],
         value: SpendingFilter,
         on_change: Callable[[SpendingFilter], None],
+        language: Language,
     ) -> None:
+        self._all_label = texts.ALL(language)
         self._value = value
         self._on_change = on_change
         self._counterparty = _filter_select(
             {name: name for name in counterparties},
-            "Counterparty",
+            self._all_label,
+            texts.COUNTERPARTY(language),
             "counterparty-filter",
             self._counterparty_changed,
             with_input=True,
         )
-        self._category = _filter_select({}, "Category", "category-filter", self._category_changed)
+        self._category = _filter_select(
+            {}, self._all_label, texts.CATEGORY(language), "category-filter", self._category_changed
+        )
         self._clear = ghost_button(
-            "Clear filters", self._cleared, icon="filter_alt_off", testid="clear-filters"
+            texts.CLEAR_FILTERS(language),
+            self._cleared,
+            icon="filter_alt_off",
+            testid="clear-filters",
         )
         self.update_categories(categories, value)
 
@@ -93,7 +104,7 @@ class SpendingFilters:
         self._value = value
         self._category.add_slot("option", _category_option_template(categories))
         self._category.set_options(
-            {_ALL_VALUE: "All", **{option.id: option.name for option in categories}},
+            {_ALL_VALUE: self._all_label, **{option.id: option.name for option in categories}},
             value=value.category_id or _ALL_VALUE,
         )
         self._show(value)

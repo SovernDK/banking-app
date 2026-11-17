@@ -18,10 +18,6 @@ class Period(StrEnum):
     def days(self) -> int:
         return _PERIOD_DAYS[self]
 
-    @property
-    def label(self) -> str:
-        return _PERIOD_LABELS[self]
-
     @classmethod
     def parse(cls, value: str | None) -> "Period":
         try:
@@ -33,7 +29,6 @@ class Period(StrEnum):
 Key = TypeVar("Key")
 
 _PERIOD_DAYS = {Period.LAST_WEEK: 7, Period.LAST_MONTH: 30}
-_PERIOD_LABELS = {Period.LAST_WEEK: "Last week", Period.LAST_MONTH: "Last month"}
 LONGEST_PERIOD = max(Period, key=lambda period: period.days)
 
 
@@ -50,14 +45,6 @@ class Comparison(StrEnum):
     MONTH = "m2m"
     YEAR = "y2y"
 
-    @property
-    def label(self) -> str:
-        return _COMPARISON_LABELS[self]
-
-    @property
-    def ago(self) -> str:
-        return _COMPARISON_AGO[self]
-
     def shift(self, day: date) -> date:
         """The same day back in time; a day the target month lacks becomes its last day."""
         return _months_back(day, _COMPARISON_MONTHS[self])
@@ -71,8 +58,6 @@ class Comparison(StrEnum):
 
 
 _COMPARISON_MONTHS = {Comparison.MONTH: 1, Comparison.YEAR: 12}
-_COMPARISON_LABELS = {Comparison.MONTH: "M2M", Comparison.YEAR: "Y2Y"}
-_COMPARISON_AGO = {Comparison.MONTH: "a month ago", Comparison.YEAR: "a year ago"}
 
 
 def history_start(today: date) -> date:

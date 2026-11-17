@@ -3,6 +3,8 @@ from dataclasses import dataclass
 
 from nicegui import ui
 
+from app import texts
+from app.i18n import Language
 from app.ui.components.ghost_button import ghost_button
 from app.ui.components.primary_button import primary_button
 
@@ -14,11 +16,10 @@ class CategoryEntry:
     usage: int
 
 
-def _delete_warning(entry: CategoryEntry) -> str:
+def _delete_warning(entry: CategoryEntry, language: Language) -> str:
     if entry.usage == 0:
-        return f"Delete {entry.name}?"
-    names = "counterparty" if entry.usage == 1 else "counterparties"
-    return f"Delete {entry.name}? {entry.usage} {names} will become Uncategorised."
+        return texts.CONFIRM_DELETE(language, name=entry.name)
+    return texts.CONFIRM_DELETE_IN_USE(language, entry.usage, name=entry.name)
 
 
 @dataclass
@@ -38,7 +39,9 @@ class CategoryList:
         entries: list[CategoryEntry],
         on_rename: Callable[[str, str], Awaitable[None]],
         on_delete: Callable[[str], Awaitable[None]],
+        language: Language,
     ) -> None:
+        self._language = language
         self._on_rename = on_rename
         self._on_delete = on_delete
         self._rows: dict[str, _Row] = {}
@@ -73,11 +76,10 @@ class CategoryList:
         self._label(row)
         return row
 
-    @staticmethod
-    def _label(row: _Row) -> None:
+    def _label(self, row: _Row) -> None:
         # Names are user input, so they never go through the props parser.
-        row.field.props["aria-label"] = f"Name of {row.entry.name}"
-        row.delete.props["aria-label"] = f"Delete {row.entry.name}"
+        row.field.props["aria-label"] = texts.CATEGORY_NAME_OF(self._language, name=row.entry.name)
+        row.delete.props["aria-label"] = texts.DELETE_NAMED(self._language, name=row.entry.name)
         row.field.update()
         row.delete.update()
 
@@ -87,10 +89,14 @@ class CategoryList:
 
     async def _confirm_delete(self, entry: CategoryEntry) -> None:
         with ui.dialog() as confirm, ui.card().props("flat bordered").classes("rounded-xl p-4"):
-            ui.label(_delete_warning(entry)).classes("text-sm")
+            ui.label(_delete_warning(entry, self._language)).classes("text-sm")
             with ui.row().classes("w-full justify-end gap-2"):
-                ghost_button("Cancel", lambda: confirm.submit(False))
-                primary_button("Delete", lambda: confirm.submit(True), testid="confirm-delete")
+                ghost_button(texts.CANCEL(self._language), lambda: confirm.submit(False))
+                primary_button(
+                    texts.DELETE(self._language),
+                    lambda: confirm.submit(True),
+                    testid="confirm-delete",
+                )
         if await confirm:
             await self._on_delete(entry.id)
         confirm.delete()

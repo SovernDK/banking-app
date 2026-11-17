@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 
 from nicegui import run, ui
 
+from app import texts
 from app.bank_profiles import BankProfile, profile_for, transaction_name
 from app.banking.client import BankApiError, BankSessionExpiredError
 from app.banking.errors import BankErrorCode
@@ -18,6 +19,7 @@ from app.categories import (
     counterparty_name,
 )
 from app.config import get_settings
+from app.i18n import Language
 from app.spending import (
     Comparison,
     Period,
@@ -60,33 +62,35 @@ def _error_from(code: str | None) -> BankErrorCode | None:
         return None
 
 
-def _connect_button(service: BankingService) -> None:
+def _connect_button(service: BankingService, language: Language) -> None:
     async def connect() -> None:
         try:
             url = await run.io_bound(service.connect_url)
         except BankApiError:
-            ui.notify(BankErrorCode.BANK_UNAVAILABLE.message, type="negative")
+            ui.notify(texts.BANK_ERRORS[BankErrorCode.BANK_UNAVAILABLE](language), type="negative")
             return
         ui.navigate.to(url)
 
-    primary_button("Connect bank", connect, testid="connect-bank")
+    primary_button(texts.CONNECT_BANK(language), connect, testid="connect-bank")
 
 
 CHART_SLICE_LIMIT = 7
 
 
-def _counterparty_slices(shares: list[Share[str]]) -> list[DonutSlice]:
+def _counterparty_slices(shares: list[Share[str]], language: Language) -> list[DonutSlice]:
     kept, rest = top_shares(shares, CHART_SLICE_LIMIT)
     slices = [
         DonutSlice(label=share.key, amount=share.amount, colour_slot=rank)
         for rank, share in enumerate(kept)
     ]
     if rest:
-        slices.append(DonutSlice(label="Other", amount=rest, hatched=True))
+        slices.append(DonutSlice(label=texts.OTHER(language), amount=rest, hatched=True))
     return slices
 
 
-def _category_slices(shares: list[Share[str | None]], book: CategoryBook) -> list[DonutSlice]:
+def _category_slices(
+    shares: list[Share[str | None]], book: CategoryBook, language: Language
+) -> list[DonutSlice]:
     categorised = [
         Share(key=category, amount=share.amount)
         for share in shares
@@ -100,9 +104,9 @@ def _category_slices(shares: list[Share[str | None]], book: CategoryBook) -> lis
         for share in kept
     ]
     if rest:
-        slices.append(DonutSlice(label="Other", amount=rest, hatched=True))
+        slices.append(DonutSlice(label=texts.OTHER(language), amount=rest, hatched=True))
     if uncategorised:
-        slices.append(DonutSlice(label="Uncategorised", amount=uncategorised))
+        slices.append(DonutSlice(label=texts.UNCATEGORISED(language), amount=uncategorised))
     return slices
 
 
@@ -120,9 +124,10 @@ def _spending_view(
     book: CategoryBook,
 ) -> None:
     currency = main_currency(transactions)
+    language = shell.language
     if currency is None:
         with band:
-            empty_state("No spending in the last month.")
+            empty_state(texts.NO_RECENT_SPENDING(language))
         return
     dark_mode = shell.dark_mode
     spending = {period: daily_spending(transactions, currency, period, today) for period in Period}
@@ -145,9 +150,13 @@ def _spending_view(
             ui.navigate.history.replace(f"/?{query}")
 
     def overview_label() -> str:
+        period = texts.PERIODS_IN_SENTENCE[selected](language)
+        if spending_filter.category_id == UNCATEGORISED:
+            return texts.SPENT_UNCATEGORISED(language, period=period)
         subject = spending_filter.subject(book)
-        period = selected.label.lower()
-        return f"Spent on {subject}, {period}" if subject else f"Spent, {period}"
+        if subject:
+            return texts.SPENT_ON(language, subject=subject, period=period)
+        return texts.SPENT(language, period=period)
 
     spending_overview: SpendingOverview | None = None
 
@@ -169,7 +178,7 @@ def _spending_view(
     @ui.refreshable
     def overview() -> None:
         nonlocal spending_overview
-        spending_overview = SpendingOverview(currency, dark=bool(dark_mode.value))
+        spending_overview = SpendingOverview(currency, language, dark=bool(dark_mode.value))
         show_overview()
 
     def category_options() -> list[CategoryOption]:
@@ -178,7 +187,7 @@ def _spending_view(
                 CategoryOption(id=category.id, name=category.name, colour_slot=category.colour_slot)
                 for category in book.categories
             ),
-            CategoryOption(id=UNCATEGORISED, name="Uncategorised", colour_slot=None),
+            CategoryOption(id=UNCATEGORISED, name=texts.UNCATEGORISED(language), colour_slot=None),
         ]
 
     def category_id_of(transaction: Transaction) -> str | None:
@@ -187,7 +196,7 @@ def _spending_view(
 
     def category_slices() -> list[DonutSlice]:
         shares = spending_by(transactions, currency, selected, today, category_id_of)
-        return _category_slices(shares, book)
+        return _category_slices(shares, book, language)
 
     def assigned_category(counterparty: str) -> str | None:
         category = book.category_of(counterparty)
@@ -231,8 +240,8 @@ def _spending_view(
             else:
                 existing = book.find_by_name(value)
                 category_id = existing.id if existing else book.create(value).id
-        except InvalidCategoryNameError as error:
-            ui.notify(str(error), type="negative")
+        except InvalidCategoryNameError:
+            ui.notify(texts.CATEGORY_NAME_LENGTH(language), type="negative")
             show_categories()
             return
         book.assign(counterparty, category_id)
@@ -241,8 +250,12 @@ def _spending_view(
     async def rename_category(category_id: str, name: str) -> None:
         try:
             book.rename(category_id, name)
-        except (InvalidCategoryNameError, DuplicateCategoryError) as error:
-            ui.notify(str(error), type="negative")
+        except InvalidCategoryNameError:
+            ui.notify(texts.CATEGORY_NAME_LENGTH(language), type="negative")
+            show_categories()
+            return
+        except DuplicateCategoryError as error:
+            ui.notify(texts.CATEGORY_EXISTS(language, name=error.name), type="negative")
             show_categories()
             return
         await save_and_show()
@@ -265,9 +278,10 @@ def _spending_view(
         rename_category,
         delete_category,
         change_category,
+        language,
     )
     with shell.actions:
-        settings_button(settings.open)
+        settings_button(settings.open, language)
 
     @ui.refreshable
     def breakdown() -> None:
@@ -277,7 +291,7 @@ def _spending_view(
             return
         dark = bool(dark_mode.value)
         with ui.grid().classes("w-full grid-cols-1 md:grid-cols-2 gap-4"):
-            with section("Counterparties", currency):
+            with section(texts.COUNTERPARTIES(language), currency):
                 counterparty_shares = merge_spellings(
                     spending_by(
                         transactions,
@@ -288,17 +302,17 @@ def _spending_view(
                     )
                 )
                 Donut(
-                    _counterparty_slices(counterparty_shares),
+                    _counterparty_slices(counterparty_shares, language),
                     currency,
-                    legend_label="Counterparties",
+                    legend_label=texts.COUNTERPARTIES(language),
                     dark=dark,
                     testid="counterparty-donut",
                 )
-            with section("Categories", currency):
+            with section(texts.CATEGORIES(language), currency):
                 category_donut = Donut(
                     category_slices(),
                     currency,
-                    legend_label="Categories",
+                    legend_label=texts.CATEGORIES(language),
                     dark=dark,
                     testid="categories",
                 )
@@ -324,9 +338,11 @@ def _spending_view(
 
     with band:
         with ui.row().classes("w-full items-center gap-4"):
-            period_filter(initial, select)
-            comparison_filter(comparison, compare)
-            filters = SpendingFilters(counterparties, category_options(), spending_filter, choose)
+            period_filter(initial, select, language)
+            comparison_filter(comparison, compare, language)
+            filters = SpendingFilters(
+                counterparties, category_options(), spending_filter, choose, language
+            )
         overview()
     breakdown()
 
@@ -349,31 +365,32 @@ def register() -> None:
         settings = get_settings()
         service = find_banking_service()
         error = _error_from(bank_error)
-        with page_shell(settings.app_title) as shell:
+        with page_shell(settings.app_title, settings.default_language) as shell:
+            language = shell.language
             with overview_band() as band:
                 with ui.row().classes("w-full items-center justify-between gap-4"):
-                    ui.label("Overview").classes("text-2xl font-normal").props(
+                    ui.label(texts.OVERVIEW(language)).classes("text-2xl font-normal").props(
                         'role="heading" aria-level="1"'
                     )
                     if settings.enable_banking_environment == "sandbox":
-                        chip("science", "Sandbox")
+                        chip("science", texts.SANDBOX(language))
                 if service is None:
-                    alert(BankErrorCode.NOT_CONFIGURED.message)
+                    alert(texts.BANK_ERRORS[BankErrorCode.NOT_CONFIGURED](language))
                     return
                 if error:
-                    alert(error.message)
+                    alert(texts.BANK_ERRORS[error](language))
                 try:
                     transactions = await run.io_bound(service.transactions)
                 except NotConnectedError:
-                    empty_state("No transactions yet. Connect a bank account to see your history.")
-                    _connect_button(service)
+                    empty_state(texts.NO_TRANSACTIONS(language))
+                    _connect_button(service, language)
                     return
                 except BankSessionExpiredError:
-                    alert(BankErrorCode.SESSION_EXPIRED.message)
-                    _connect_button(service)
+                    alert(texts.BANK_ERRORS[BankErrorCode.SESSION_EXPIRED](language))
+                    _connect_button(service, language)
                     return
                 except BankApiError:
-                    alert(BankErrorCode.BANK_UNAVAILABLE.message)
+                    alert(texts.BANK_ERRORS[BankErrorCode.BANK_UNAVAILABLE](language))
                     return
                 store = CategoryStore(
                     settings.data_dir / CATEGORIES_FILENAME, settings.starter_categories

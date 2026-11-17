@@ -136,6 +136,24 @@ flowchart LR
 </section>
 
 <section>
+<h2>Languages</h2>
+<pre class="mermaid">
+flowchart LR
+  T["app/texts.py<br/>every UI string as Text(pl, en, ja)<br/>or Plural (CLDR forms)"] --> UI[components + dashboard<br/>texts.X(language, **values)]
+  PK["Top bar picker<br/>PL · EN · JP (before ⚙)"] -->|app.storage.user language| ST[(per-browser cookie storage)]
+  ST -->|"page_shell: parse, else YIJI_DEFAULT_LANGUAGE"| L[PageShell.language]
+  PK -->|reload; URL keeps filters| L
+  L --> UI
+  L -->|"html lang=pl|en|ja"| H[html]
+</pre>
+<ul>
+<li>Add a string: one constant in <code>app/texts.py</code> with all three languages (missing one = type error). Domain enums (Period, Comparison, BankErrorCode) carry no text; <code>texts.PERIODS</code>, <code>COMPARISONS</code>, <code>BANK_ERRORS</code> map them.</li>
+<li><code>tests/unit/test_i18n.py</code> checks every text is filled in and uses the same <code>{fields}</code> in each language.</li>
+<li>Not translated: user data (category and bank names, incl. seeded starter categories), money/date formats, Quasar/ECharts built-in labels.</li>
+</ul>
+</section>
+
+<section>
 <h2>Request flow: opening the dashboard</h2>
 <pre class="mermaid">
 sequenceDiagram
@@ -154,6 +172,8 @@ sequenceDiagram
 app/
   main.py            FastAPI app; mounts NiceGUI with ui.run_with
   config.py          Settings (pydantic-settings; YIJI_* + ENABLE_BANKING_*)
+  i18n.py            Language (pl/en/ja, labels PL/EN/JP), Text, Plural
+  texts.py           Every user-facing string, in all languages
   api/health.py      GET /api/health
   api/bank.py        Bank callback at /api/bank/callback + local redirect path (e.g. /callback)
   tls.py             python -m app.tls: self-signed localhost certificate for HTTPS
@@ -212,7 +232,8 @@ uv run pytest -m sandbox                  # live: real sandbox app from .env</pr
 <table>
 <tr><th>Variable</th><th>Default</th><th>Purpose</th></tr>
 <tr><td><code>YIJI_APP_TITLE</code></td><td>Yiji</td><td>Header and browser title</td></tr>
-<tr><td><code>YIJI_STORAGE_SECRET</code></td><td>change-me</td><td>NiceGUI session storage signing secret</td></tr>
+<tr><td><code>YIJI_DEFAULT_LANGUAGE</code></td><td>en</td><td><code>pl</code>, <code>en</code> or <code>ja</code>; shown until the viewer picks one</td></tr>
+<tr><td><code>YIJI_STORAGE_SECRET</code></td><td>change-me</td><td>NiceGUI session storage signing secret (also keeps the chosen language)</td></tr>
 <tr><td><code>YIJI_HOST</code></td><td>127.0.0.1</td><td>Bind address</td></tr>
 <tr><td><code>YIJI_PORT</code></td><td>8100</td><td>HTTP port (1–65535)</td></tr>
 <tr><td><code>YIJI_RELOAD</code></td><td>false</td><td>Auto-reload on code changes (dev)</td></tr>

@@ -28,6 +28,10 @@ class DashboardPage:
         self.page.keyboard.type(category)
         self.page.keyboard.press("Enter")
 
+    def choose_language(self, label: str) -> None:
+        self.language_picker.click()
+        self.page.get_by_role("option", name=label, exact=True).click()
+
     def open_settings(self) -> None:
         self.settings_button.click()
 
@@ -108,6 +112,10 @@ class DashboardPage:
     @property
     def empty_state(self) -> Locator:
         return self.page.get_by_test_id("empty-state")
+
+    @property
+    def language_picker(self) -> Locator:
+        return self.page.get_by_test_id("language")
 
     @property
     def dark_mode_toggle(self) -> Locator:

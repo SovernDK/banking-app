@@ -9,6 +9,7 @@ from pydantic import Field, HttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.categories import CategoryName
+from app.i18n import Language
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -47,6 +48,9 @@ class Settings(BaseSettings):
     )
 
     app_title: str = "Yiji"
+    default_language: Language = Field(
+        default=Language.EN, description="Shown until the viewer picks a language."
+    )
     storage_secret: str = "change-me"
     host: str = "127.0.0.1"
     port: int = Field(default=8100, ge=1, le=65535)

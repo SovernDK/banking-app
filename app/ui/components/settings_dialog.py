@@ -2,6 +2,8 @@ from collections.abc import Awaitable, Callable
 
 from nicegui import ui
 
+from app import texts
+from app.i18n import Language
 from app.ui.components.category_list import CategoryEntry, CategoryList
 from app.ui.components.counterparties_table import CounterpartiesTable, CounterpartyRow
 from app.ui.components.ghost_button import ghost_button
@@ -29,6 +31,7 @@ class SettingsDialog:
         on_rename: Callable[[str, str], Awaitable[None]],
         on_delete: Callable[[str], Awaitable[None]],
         on_assign: Callable[[str, str | None], Awaitable[None]],
+        language: Language,
     ) -> None:
         with (
             ui.dialog() as self._dialog,
@@ -36,23 +39,24 @@ class SettingsDialog:
             .props('flat bordered data-testid="settings-dialog"')
             .classes("w-full max-w-2xl rounded-xl p-4 gap-4"),
         ):
-            ui.label("Settings").classes("text-lg font-medium").props(
+            ui.label(texts.SETTINGS(language)).classes("text-lg font-medium").props(
                 'role="heading" aria-level="2"'
             )
-            with _box("Categories", "settings-categories"), ui.column().classes("w-full"):
-                self._categories = CategoryList(categories, on_rename, on_delete)
             with (
-                _box("Counterparties", "settings-counterparties"),
+                _box(texts.CATEGORIES(language), "settings-categories"),
+                ui.column().classes("w-full"),
+            ):
+                self._categories = CategoryList(categories, on_rename, on_delete, language)
+            with (
+                _box(texts.COUNTERPARTIES(language), "settings-counterparties"),
                 ui.column().classes("w-full gap-1"),
             ):
-                ui.label("Pick a category for each name; it applies to all their payments").classes(
-                    "text-xs text-muted"
-                )
+                ui.label(texts.PICK_CATEGORY_HINT(language)).classes("text-xs text-muted")
                 self._counterparties = CounterpartiesTable(
-                    counterparties, category_names, currency, on_assign
+                    counterparties, category_names, currency, on_assign, language
                 )
             with ui.row().classes("w-full justify-end"):
-                ghost_button("Done", self._dialog.close)
+                ghost_button(texts.DONE(language), self._dialog.close)
 
     def open(self) -> None:
         self._dialog.open()
@@ -67,7 +71,9 @@ class SettingsDialog:
         self._counterparties.update(category_names, category_of)
 
 
-def settings_button(on_click: Callable[[], None]) -> ui.button:
-    return ui.button(icon="settings", on_click=on_click).props(
-        'flat round color=inherit aria-label="Settings" data-testid="settings"'
+def settings_button(on_click: Callable[[], None], language: Language) -> ui.button:
+    button = ui.button(icon="settings", on_click=on_click).props(
+        'flat round color=inherit data-testid="settings"'
     )
+    button.props["aria-label"] = texts.SETTINGS(language)
+    return button

@@ -5,6 +5,8 @@ from decimal import Decimal
 from nicegui import ui
 from nicegui.events import ValueChangeEventArguments
 
+from app import texts
+from app.i18n import Language
 from app.ui import format as fmt
 
 
@@ -25,6 +27,7 @@ class CounterpartiesTable:
         categories: dict[str, str],
         currency: str,
         on_change: Callable[[str, str | None], Awaitable[None]],
+        language: Language,
     ) -> None:
         """`on_change` gets a category id, a typed new category name, or None to uncategorise."""
         self._on_change = on_change
@@ -40,7 +43,7 @@ class CounterpartiesTable:
                         ui.select(
                             dict(categories),
                             value=row.category_id,
-                            label="Category",
+                            label=texts.CATEGORY(language),
                             with_input=True,
                             new_value_mode="add-unique",
                             clearable=True,
@@ -50,7 +53,7 @@ class CounterpartiesTable:
                         .props("dense outlined")
                     )
                     # Names come from the bank, so they never go through the props parser.
-                    select.props["aria-label"] = f"Category for {row.name}"
+                    select.props["aria-label"] = texts.CATEGORY_FOR(language, name=row.name)
                     self._selects[row.name] = select
 
     async def _changed(self, event: ValueChangeEventArguments, name: str) -> None:

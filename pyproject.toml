@@ -23,6 +23,10 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "N", "RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+# Japanese text uses full-width punctuation, which RUF001 takes for look-alikes of ASCII.
+"app/texts.py" = ["RUF001"]
+
 [tool.pyright]
 include = ["app", "tests"]
 pythonVersion = "3.11"

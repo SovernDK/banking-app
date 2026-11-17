@@ -2,8 +2,11 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
-from nicegui import ui
+from nicegui import app, ui
+from nicegui.events import ValueChangeEventArguments
 
+from app import texts
+from app.i18n import Language
 from app.ui.palette import DARK, FONT_FAMILY, LIGHT, Palette
 
 
@@ -47,6 +50,7 @@ body {{
 .bg-yiji-ink {{ background-color: var(--yiji-ink); }}
 .text-yiji-inverse {{ color: var(--yiji-inverse-text); }}
 .yiji-toggle {{ border: 1px solid var(--yiji-muted); }}
+.yiji-language .q-field__native, .yiji-language .q-field__append {{ color: var(--yiji-text); }}
 .yiji-chip {{ border: 1px solid var(--yiji-border); }}
 .yiji-box {{ border: 1px solid var(--yiji-border); }}
 .yiji-divider {{ border-bottom: 1px solid var(--yiji-border); }}
@@ -58,20 +62,55 @@ body {{
 @dataclass(frozen=True)
 class PageShell:
     dark_mode: ui.dark_mode
+    language: Language
     actions: ui.row
-    """Header slot left of the dark-mode toggle, for buttons a page adds once its data loads."""
+    """Header slot between the language picker and the dark-mode toggle, for buttons a page adds
+    once its data loads."""
+
+
+def _viewer_language(default: Language) -> Language:
+    return Language.parse(app.storage.user.get("language")) or default
+
+
+def _choose_language(event: ValueChangeEventArguments) -> None:
+    language = Language.parse(event.value)
+    if language is None:
+        return
+    app.storage.user["language"] = language.value
+    # Every text is built in the viewer's language as the page is made, so the page is made
+    # again; its URL keeps the chosen filters.
+    ui.navigate.reload()
+
+
+def _language_picker(language: Language) -> ui.select:
+    picker = (
+        ui.select(
+            {option.value: option.label for option in Language},
+            value=language.value,
+            on_change=_choose_language,
+        )
+        .classes("yiji-language")
+        .props('dense borderless options-dense data-testid="language"')
+    )
+    picker.props["aria-label"] = texts.LANGUAGE(language)
+    return picker
 
 
 @contextmanager
-def page_shell(title: str) -> Iterator[PageShell]:
+def page_shell(title: str, default_language: Language) -> Iterator[PageShell]:
+    """The viewer's language is kept per browser and falls back to `default_language`."""
     ui.add_css(THEME_CSS)
+    language = _viewer_language(default_language)
+    ui.query("html").props(f"lang={language.value}")
     dark_mode = ui.dark_mode()
     with ui.header().classes("yiji-top-bar items-center justify-between px-6 py-3"):
         ui.label(title).classes("text-lg font-semibold")
         with ui.row().classes("items-center gap-1"):
+            _language_picker(language)
             actions = ui.row().classes("items-center gap-1")
-            ui.button(icon="dark_mode", on_click=dark_mode.toggle).props(
-                'flat round color=inherit aria-label="Toggle dark mode"'
+            toggle = ui.button(icon="dark_mode", on_click=dark_mode.toggle).props(
+                "flat round color=inherit"
             )
+            toggle.props["aria-label"] = texts.TOGGLE_DARK_MODE(language)
     with ui.column().classes("w-full max-w-6xl mx-auto p-4 gap-4"):
-        yield PageShell(dark_mode=dark_mode, actions=actions)
+        yield PageShell(dark_mode=dark_mode, language=language, actions=actions)

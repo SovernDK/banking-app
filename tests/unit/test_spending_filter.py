@@ -118,7 +118,7 @@ def test_subject_names_what_the_filter_shows() -> None:
     assert ALL.subject(book) is None
     assert SpendingFilter(counterparty="Orlen").subject(book) == "Orlen"
     assert SpendingFilter(category_id=groceries).subject(book) == "Groceries"
-    assert SpendingFilter(category_id=UNCATEGORISED).subject(book) == "uncategorised"
+    assert SpendingFilter(category_id=UNCATEGORISED).subject(book) is None
 
 
 @pytest.mark.parametrize(

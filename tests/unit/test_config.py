@@ -16,6 +16,7 @@ from pydantic import ValidationError
 
 from app import config
 from app.config import PROJECT_ROOT, LocalCallbackError, MissingCredentialsError, Settings
+from app.i18n import Language
 from app.tls import write_private_key
 
 
@@ -261,3 +262,18 @@ def test_hosted_redirect_needs_no_local_server_setup() -> None:
     settings = Settings(_env_file=None, enable_banking_environment="production", port=8100)  # type: ignore[call-arg]
 
     settings.check_local_callback()
+
+
+def test_default_language_is_english_unless_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("YIJI_DEFAULT_LANGUAGE", raising=False)
+    assert Settings(_env_file=None).default_language is Language.EN  # type: ignore[call-arg]
+
+    monkeypatch.setenv("YIJI_DEFAULT_LANGUAGE", "ja")
+    assert Settings(_env_file=None).default_language is Language.JA  # type: ignore[call-arg]
+
+
+def test_rejects_unsupported_default_language(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("YIJI_DEFAULT_LANGUAGE", "de")
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)  # type: ignore[call-arg]

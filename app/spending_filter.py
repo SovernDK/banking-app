@@ -50,10 +50,10 @@ class SpendingFilter:
         return True
 
     def subject(self, book: CategoryBook) -> str | None:
+        """The counterparty or category name the filter narrows to; None for all spending or for
+        uncategorised spending, which has no name."""
         if self.counterparty:
             return self.counterparty
-        if self.category_id == UNCATEGORISED:
-            return "uncategorised"
         category = book.get(self.category_id) if self.category_id else None
         return category.name if category else None
 
