@@ -1,0 +1,26 @@
+# Yiji on a server behind Caddy. Setup steps: docs/wiki.html ("Server").
+services:
+  yiji:
+    image: ${YIJI_IMAGE:-ghcr.io/soverndk/yiji:latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ENABLE_BANKING_KEY_PATH: /run/secrets/enable-banking.pem
+      YIJI_STORAGE_SECRET: ${YIJI_STORAGE_SECRET:?set YIJI_STORAGE_SECRET in .env}
+      YIJI_PUBLIC_URL: ${YIJI_PUBLIC_URL:?set YIJI_PUBLIC_URL in .env}
+      TZ: ${TZ:-Europe/Warsaw}
+    volumes:
+      - yiji-data:/data
+      - ./backups:/backups
+      - ./secrets/enable-banking.pem:/run/secrets/enable-banking.pem:ro
+    # No published port: Caddy reaches Yiji as yiji:8100 on its own network.
+    networks:
+      - caddy
+
+networks:
+  caddy:
+    external: true
+    name: ${CADDY_NETWORK:?set CADDY_NETWORK in .env}
+
+volumes:
+  yiji-data:

@@ -1,11 +1,11 @@
-# Template: set WorkingDirectory to the Yiji checkout, then install as described in
-# docs/wiki.html ("Daily sync"). Exit code 2 means the bank needs reconnecting in Yiji.
+# Install as described in docs/wiki.html ("Server"). Exit code 2 means the bank needs
+# reconnecting in Yiji. The backup runs even when the sync fails; the sync's exit code is kept.
 [Unit]
-Description=Store the latest Yiji bank payments and exchange rates
-Wants=network-online.target
-After=network-online.target
+Description=Store the latest Yiji bank payments and exchange rates, then back them up
+Wants=network-online.target docker.service
+After=network-online.target docker.service
 
 [Service]
 Type=oneshot
-WorkingDirectory=%h/yiji
-ExecStart=/usr/bin/env uv run --no-dev python -m app.sync
+WorkingDirectory=/opt/yiji
+ExecStart=/bin/sh -c 'docker compose run --rm --no-deps yiji python -m app.sync; status=$?; docker compose run --rm --no-deps yiji python -m app.backup; exit $status'
