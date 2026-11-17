@@ -349,9 +349,9 @@ def _spending_view(
             period_filter(initial, select, language)
             comparison_filter(comparison, compare, language)
             currency_filter(currencies, currency, show_in, language)
-            filters = SpendingFilters(
-                counterparties, category_options(), spending_filter, choose, language
-            )
+        filters = SpendingFilters(
+            counterparties, category_options(), spending_filter, choose, language
+        )
         overview()
     breakdown()
 

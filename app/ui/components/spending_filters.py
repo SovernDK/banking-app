@@ -60,14 +60,15 @@ def _filter_select(
             with_input=with_input,
             on_change=on_change,
         )
-        .classes("w-56")
+        .classes("min-w-0 flex-1 sm:w-56 sm:flex-none")
         .props(f'dense outlined options-dense data-testid="{testid}"')
     )
 
 
 class SpendingFilters:
-    """Counterparty and category selects, one active at a time, plus a Clear filters button.
-    `update_categories` changes the category options in place, so editing never moves the page."""
+    """Counterparty and category selects, one active at a time, plus a Clear filters button, on
+    a row of their own that never wraps. `update_categories` changes the category options in
+    place, so editing never moves the page."""
 
     def __init__(
         self,
@@ -80,6 +81,11 @@ class SpendingFilters:
         self._all_label = texts.ALL(language)
         self._value = value
         self._on_change = on_change
+        with ui.row().classes("w-full flex-nowrap items-center gap-2 sm:gap-4"):
+            self._build(counterparties, language)
+        self.update_categories(categories, value)
+
+    def _build(self, counterparties: list[str], language: Language) -> None:
         self._counterparty = _filter_select(
             {name: name for name in counterparties},
             self._all_label,
@@ -96,8 +102,8 @@ class SpendingFilters:
             self._cleared,
             icon="filter_alt_off",
             testid="clear-filters",
-        )
-        self.update_categories(categories, value)
+            icon_only_on_phones=True,
+        ).classes("shrink-0")
 
     def update_categories(self, categories: list[CategoryOption], value: SpendingFilter) -> None:
         # Stored first so the change handler fired by `set_options` sees nothing new.

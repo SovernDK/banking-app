@@ -169,6 +169,7 @@ flowchart LR
 <li>Counterparty matching uses the Counterparties donut's names (case-insensitive, nameless → payment method); category matching uses the category rules. The donuts ignore the filter.</li>
 <li>Total label: "Spent on &lt;name&gt;, last month"; under it "▲ +12.0% vs 100.00 EUR a month ago" (more spending = loss colour, less = gain, no history = muted, no %). The filter narrows both periods. Nothing in range → "No spending in this period." with the filter kept.</li>
 <li>Logic: <code>app/spending_filter.py</code> (pure). UI: <code>SpendingFilters</code> + <code>SpendingOverview</code>, both updated in place.</li>
+<li>Layout: toggles (period · compare · currency) on the first row; Counterparty · Category · Clear filters on a row of their own below, never wrapping. On phones the selects shrink and Clear filters shows only its icon.</li>
 </ul>
 </section>
 

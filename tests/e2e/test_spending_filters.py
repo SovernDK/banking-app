@@ -3,7 +3,7 @@ from collections.abc import Callable
 from datetime import date, timedelta
 
 import pytest
-from playwright.sync_api import Page, expect
+from playwright.sync_api import FloatRect, Locator, Page, expect
 
 from tests.e2e.pages.dashboard_page import DashboardPage
 from tests.fakes.enable_banking import debit
@@ -185,3 +185,29 @@ def test_selected_option_is_drawn_in_dark_ink_in_dark_mode(dashboard: DashboardP
 
     selected = dashboard.page.get_by_role("option", name="Groceries", exact=True)
     expect(selected).to_have_css("color", "rgb(246, 247, 237)")
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_filters_share_one_row_below_the_toggles_on_any_screen(
+    dashboard: DashboardPage, width: int
+) -> None:
+    dashboard.page.set_viewport_size({"width": width, "height": 900})
+    expect(dashboard.clear_filters_button).to_be_visible()
+    toggles = [dashboard.period_filter, dashboard.comparison_filter, dashboard.currency_filter]
+    selects = [dashboard.counterparty_filter, dashboard.category_filter]
+    clear = _box(dashboard.clear_filters_button)
+
+    toggles_bottom = max(_box(toggle)["y"] + _box(toggle)["height"] for toggle in toggles)
+    for select in map(_box, selects):
+        assert select["y"] >= toggles_bottom
+        assert (
+            clear["y"] < select["y"] + select["height"]
+            and select["y"] < clear["y"] + clear["height"]
+        )
+    assert clear["x"] + clear["width"] <= width
+
+
+def _box(locator: Locator) -> FloatRect:
+    box = locator.bounding_box()
+    assert box is not None
+    return box
