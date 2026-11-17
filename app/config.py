@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     ssl_certfile: Path | None = None
     ssl_keyfile: Path | None = None
     data_dir: Path = PROJECT_ROOT / ".yiji"
+    backup_dir: Path = PROJECT_ROOT / ".yiji-backups"
+    backup_keep: int = Field(default=14, ge=1, description="Daily backups kept; older are deleted.")
     public_url: HttpUrl | None = Field(
         default=None,
         description="Where Yiji is reached when it runs on a server; the bank callback goes there.",
