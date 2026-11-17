@@ -1,6 +1,6 @@
 from collections.abc import Callable
 
-from app.bank_profiles import generic, mock_aspsp
+from app.bank_profiles import generic, mock_aspsp, pekao
 from app.banking.models import Transaction
 from app.payments import Payment
 
@@ -9,6 +9,7 @@ BankProfile = Callable[[Transaction], Payment | None]
 
 _PROFILES: dict[tuple[str, str], BankProfile] = {
     ("mock aspsp", "FI"): mock_aspsp.to_payment,
+    ("bank pekao", "PL"): pekao.to_payment,
 }
 
 
