@@ -85,6 +85,18 @@ def test_server_error_raises_bank_api_error(
         bank_client.create_session(FAKE_CODE)
 
 
+def test_refusal_logs_the_enable_banking_error_code_for_the_server_operator(
+    key_file: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    def refuse(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(400, json={"code": 400, "error": "REDIRECT_URI_NOT_ALLOWED"})
+
+    with pytest.raises(BankApiError):
+        _start(_client_answering(refuse, key_file))
+    assert "400" in caplog.text
+    assert "REDIRECT_URI_NOT_ALLOWED" in caplog.text
+
+
 def test_malformed_response_raises_bank_api_error(
     bank_client: EnableBankingClient, fake_bank: FakeBankState
 ) -> None:

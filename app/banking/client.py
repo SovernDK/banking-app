@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, TypeVar
@@ -8,6 +9,8 @@ from pydantic import BaseModel, ValidationError
 
 from app.banking.models import AuthResponse, SessionResponse, Transaction, TransactionsPage
 from app.config import load_rsa_private_key
+
+logger = logging.getLogger(__name__)
 
 JWT_LIFETIME = timedelta(hours=1)
 
@@ -95,6 +98,14 @@ class EnableBankingClient:
             response = self._http.request(method, path, headers=headers, **kwargs)
         except httpx2.HTTPError as error:
             raise BankApiError("The bank service could not be reached.") from error
+        if response.is_error:
+            # The path is left out: it carries account ids, which have no place in a log.
+            logger.warning(
+                "Enable Banking refused %s: %s %s",
+                method,
+                response.status_code,
+                _error_code(response) or "(no error code)",
+            )
         if response.is_error and "SESSION" in _error_code(response):
             raise BankSessionExpiredError("The bank connection has expired.")
         if response.is_error:
