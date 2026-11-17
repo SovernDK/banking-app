@@ -13,6 +13,24 @@ SETTINGS = Text(pl="Ustawienia", en="Settings", ja="設定")
 OVERVIEW = Text(pl="Przegląd", en="Overview", ja="概要")
 SANDBOX = Text(pl="Sandbox", en="Sandbox", ja="サンドボックス")
 CONNECT_BANK = Text(pl="Połącz bank", en="Connect bank", ja="銀行を接続")
+RECONNECT_BANK = Text(pl="Połącz ponownie", en="Reconnect", ja="再接続")
+CONNECTION_ENDS_TODAY = Text(
+    pl="Połączenie z bankiem wygasa dziś.",
+    en="Your bank connection ends today.",
+    ja="銀行との接続は今日で終了します。",
+)
+CONNECTION_ENDS_IN = Plural(
+    pl=(
+        "Połączenie z bankiem wygasa za {count} dzień.",
+        "Połączenie z bankiem wygasa za {count} dni.",
+        "Połączenie z bankiem wygasa za {count} dni.",
+    ),
+    en=(
+        "Your bank connection ends in {count} day.",
+        "Your bank connection ends in {count} days.",
+    ),
+    ja="銀行との接続はあと{count}日で終了します。",
+)
 NO_TRANSACTIONS = Text(
     pl="Brak transakcji. Połącz konto bankowe, aby zobaczyć historię.",
     en="No transactions yet. Connect a bank account to see your history.",

@@ -52,6 +52,7 @@ class FakeBankConfig(BaseModel):
     ]
     """Every account serves the same transactions."""
     page_size: int = 100
+    session_valid_until: str = SESSION_VALID_UNTIL
     deny_access: bool = False
     session_expired: bool = False
     failure_status: int | None = None
@@ -99,7 +100,7 @@ def create_fake_enable_banking() -> FastAPI:
         return {
             "session_id": "fake-session",
             "accounts": bank().accounts,
-            "access": {"valid_until": SESSION_VALID_UNTIL},
+            "access": {"valid_until": bank().session_valid_until},
         }
 
     @fake.get("/accounts/{account_uid}/transactions", response_model=None)

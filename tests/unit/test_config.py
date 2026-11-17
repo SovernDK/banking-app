@@ -187,6 +187,7 @@ def test_missing_credentials_for_selected_environment_raise_clear_error(
         ("YIJI_ENABLE_BANKING_ASPSP_COUNTRY", "fin"),
         ("YIJI_ENABLE_BANKING_CONSENT_DAYS", "181"),
         ("YIJI_ENABLE_BANKING_API_URL", "not a url"),
+        ("YIJI_RECONNECT_WARNING_DAYS", "0"),
     ],
 )
 def test_rejects_invalid_enable_banking_settings(

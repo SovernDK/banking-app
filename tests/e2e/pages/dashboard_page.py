@@ -129,6 +129,14 @@ class DashboardPage:
         return self.page.get_by_test_id("connect-bank")
 
     @property
+    def reconnect_notice(self) -> Locator:
+        return self.page.get_by_test_id("reconnect-notice")
+
+    @property
+    def reconnect_button(self) -> Locator:
+        return self.reconnect_notice.get_by_role("button", name="Reconnect")
+
+    @property
     def error(self) -> Locator:
         return self.page.get_by_role("alert")
 

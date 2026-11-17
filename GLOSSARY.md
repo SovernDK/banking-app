@@ -28,6 +28,16 @@ The ECB reference rate published on a payment's booking date, or the latest one 
 The same number of days as the selected period, ending one month (M2M) or one year (Y2Y) before today; always shown, hatched beside the current bars. Days the bank gave no history for count as no spending.
 _Avoid_: Previous period, baseline
 
+## Bank
+
+**Bank connection**:
+The person's consent, given at their bank, for Yiji to read that bank's accounts for a limited number of days. Yiji can fetch nothing before it exists and nothing after it expires; renewing it is reconnecting.
+_Avoid_: Link, login, session
+
+**First fill**:
+The fetch right after the first bank connection, which stores as much past spending as the bank serves (90 days at Pekao). Later fetches only add what was booked since the last one.
+_Avoid_: Prefill, initial import
+
 ## Breakdowns
 
 **Payment method**:

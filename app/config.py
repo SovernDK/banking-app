@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     enable_banking_aspsp_name: str = Field(default="Mock ASPSP", min_length=1, max_length=200)
     enable_banking_aspsp_country: str = Field(default="FI", pattern=r"^[A-Z]{2}$")
     enable_banking_consent_days: int = Field(default=90, ge=1, le=180)
+    reconnect_warning_days: int = Field(
+        default=7,
+        ge=1,
+        le=180,
+        description="Days before the bank connection ends to offer renewal.",
+    )
     enable_banking_timeout_seconds: float = Field(default=30, gt=0)
     transactions_refresh_minutes: int = Field(
         default=720,

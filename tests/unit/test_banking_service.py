@@ -77,6 +77,17 @@ def test_state_cannot_be_replayed(service: BankingService) -> None:
         service.complete(FAKE_CODE, state)
 
 
+def test_connection_ends_on_the_local_day_the_bank_consent_ends(
+    service: BankingService, connect: Connect, fake_bank: FakeBankState
+) -> None:
+    assert service.connection_ends_on() is None
+    fake_bank.session_valid_until = "2026-11-20T23:30:00-02:00"
+
+    connect(service)
+
+    assert service.connection_ends_on() == date(2026, 11, 21)
+
+
 def test_refresh_requires_a_connection(service: BankingService) -> None:
     with pytest.raises(NotConnectedError):
         service.refresh()

@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable
 from datetime import date
 from decimal import Decimal
 from urllib.parse import urlencode
@@ -51,6 +52,7 @@ from app.ui.components import (
     page_shell,
     period_filter,
     primary_button,
+    reconnect_notice,
     section,
     settings_button,
 )
@@ -63,7 +65,7 @@ def _error_from(code: str | None) -> BankErrorCode | None:
         return None
 
 
-def _connect_button(service: BankingService, language: Language) -> None:
+def _connector(service: BankingService, language: Language) -> Callable[[], Awaitable[None]]:
     async def connect() -> None:
         try:
             url = await run.io_bound(service.connect_url)
@@ -72,7 +74,7 @@ def _connect_button(service: BankingService, language: Language) -> None:
             return
         ui.navigate.to(url)
 
-    primary_button(texts.CONNECT_BANK(language), connect, testid="connect-bank")
+    return connect
 
 
 CHART_SLICE_LIMIT = 7
@@ -381,7 +383,19 @@ async def _payments_or_connect(
     if needs_connection and not payments:
         empty_state(texts.NO_TRANSACTIONS(language))
     if needs_connection:
-        _connect_button(service, language)
+        primary_button(
+            texts.CONNECT_BANK(language), _connector(service, language), testid="connect-bank"
+        )
+    else:
+        ends_on = await run.io_bound(service.connection_ends_on)
+        if ends_on is not None:
+            reconnect_notice(
+                ends_on,
+                get_settings().reconnect_warning_days,
+                language,
+                service.today,
+                _connector(service, language),
+            )
     return payments, needs_connection
 
 

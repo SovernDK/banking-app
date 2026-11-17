@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from datetime import date
+from datetime import date, datetime, timedelta
 
 import pytest
 from playwright.sync_api import Page, expect
@@ -57,3 +57,39 @@ def test_expired_bank_session_asks_to_reconnect(page: Page, fake_bank: Callable[
 
     expect(dashboard.error).to_contain_text("connection has expired")
     expect(dashboard.connect_button).to_be_visible()
+
+
+def _consent_ending_in(days: int) -> str:
+    return (datetime.now().astimezone() + timedelta(days=days)).isoformat()
+
+
+@pytest.mark.parametrize("days", [3, 7])
+def test_connection_ending_soon_counts_down_and_offers_early_reconnect(
+    page: Page, fake_bank: Callable[..., None], days: int
+) -> None:
+    fake_bank(
+        transactions=[debit("12.50", date.today())], session_valid_until=_consent_ending_in(days)
+    )
+    dashboard = DashboardPage(page)
+    dashboard.open()
+    dashboard.connect_bank()
+
+    expect(dashboard.reconnect_notice).to_contain_text(f"ends in {days} days")
+    dashboard.reconnect_button.click()
+
+    expect(dashboard.total).to_have_text("12.50 EUR")
+    expect(dashboard.reconnect_notice).to_be_visible()
+
+
+def test_connection_with_more_than_a_week_left_shows_no_reconnect_notice(
+    page: Page, fake_bank: Callable[..., None]
+) -> None:
+    fake_bank(
+        transactions=[debit("12.50", date.today())], session_valid_until=_consent_ending_in(8)
+    )
+    dashboard = DashboardPage(page)
+    dashboard.open()
+    dashboard.connect_bank()
+
+    expect(dashboard.total).to_have_text("12.50 EUR")
+    expect(dashboard.reconnect_notice).to_be_hidden()
