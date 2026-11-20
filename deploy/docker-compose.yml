@@ -13,14 +13,9 @@ services:
       - yiji-data:/data
       - ./backups:/backups
       - ./secrets/enable-banking.pem:/run/secrets/enable-banking.pem:ro
-    # No published port: Caddy reaches Yiji as yiji:8100 on its own network.
-    networks:
-      - caddy
-
-networks:
-  caddy:
-    external: true
-    name: ${CADDY_NETWORK:?set CADDY_NETWORK in .env}
+    # Loopback only: Caddy (host network) proxies to it; nothing else on the network can reach it.
+    ports:
+      - "127.0.0.1:${YIJI_HOST_PORT:-8100}:8100"
 
 volumes:
   yiji-data:

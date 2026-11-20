@@ -312,8 +312,8 @@ uv run pytest -m sandbox                  # live: real sandbox app from .env</pr
 flowchart LR
   GH[push to main] --> CI[GitHub Actions<br/>check → build amd64+arm64] --> GHCR[(ghcr.io/soverndk/yiji<br/>latest · sha-xxxxxxx)]
   GHCR -->|docker compose pull| Y
-  D[Device on tailnet] -->|"https://yiji.home.net<br/>(Pi-hole DNS)"| CD[Caddy container]
-  CD -->|yiji:8100 on CADDY_NETWORK| Y[yiji container<br/>no published port]
+  D[Device on tailnet] -->|"https://yiji.home.net<br/>Pi-hole: 192.168.33.24"| CD[Caddy container<br/>host network, tls internal]
+  CD -->|127.0.0.1:8100| Y[yiji container<br/>published on loopback only]
   Y --- V[(volume yiji-data → /data)]
   Y --- B[(./backups → /backups)]
   Y --- K[./secrets/enable-banking.pem<br/>read-only]
@@ -321,15 +321,23 @@ flowchart LR
 </pre>
 <ol>
 <li>GHCR login (package is private): <code>echo &lt;PAT with read:packages&gt; | docker login ghcr.io -u SovernDK --password-stdin</code></li>
-<li><code>sudo mkdir -p /opt/yiji/secrets /opt/yiji/backups</code>; copy <code>deploy/docker-compose.yml</code> and <code>deploy/.env.example</code> (as <code>.env</code>) there; fill <code>CADDY_NETWORK</code>, <code>YIJI_STORAGE_SECRET</code> (<code>openssl rand -hex 32</code>), <code>ENABLE_BANKING_APP_ID</code>.</li>
-<li>Key + folders readable by the container user: <code>cp key.pem /opt/yiji/secrets/enable-banking.pem &amp;&amp; sudo chown -R 1000:1000 /opt/yiji/secrets /opt/yiji/backups &amp;&amp; chmod 400 /opt/yiji/secrets/enable-banking.pem</code></li>
-<li>Caddyfile (keep your existing certificate setup), then reload Caddy:
+<li>One folder, as <code>user1</code>:
+<pre>/home/user1/yiji/
+  docker-compose.yml        ← deploy/docker-compose.yml
+  .env                      ← deploy/.env.example, filled in
+  secrets/enable-banking.pem
+  backups/                  (written daily)</pre>
+<code>mkdir -p ~/yiji/secrets ~/yiji/backups</code>; in <code>.env</code> fill <code>YIJI_STORAGE_SECRET</code> (<code>openssl rand -hex 32</code>), <code>ENABLE_BANKING_APP_ID</code>, optionally <code>OLLAMA_API_KEY</code> for AI categories; <code>chmod 600 ~/yiji/.env</code>.</li>
+<li>Key: <code>cp key.pem ~/yiji/secrets/enable-banking.pem &amp;&amp; chmod 400 ~/yiji/secrets/enable-banking.pem</code>. The container runs as uid 1000: if <code>id -u</code> prints 1000 that's all; otherwise <code>sudo chown -R 1000:1000 ~/yiji/secrets ~/yiji/backups</code>.</li>
+<li>Caddy (<code>~/caddy/Caddyfile</code>, host network) — append, then <code>docker exec caddy caddy reload --config /etc/caddy/Caddyfile</code>:
 <pre>yiji.home.net {
-	reverse_proxy yiji:8100
+    import itls
+    reverse_proxy 127.0.0.1:8100
 }</pre></li>
-<li><code>cd /opt/yiji &amp;&amp; docker compose pull &amp;&amp; docker compose up -d</code>; open <code>https://yiji.home.net</code> → Connect bank → select all accounts. The first fill stores the 90 days Pekao serves.</li>
+<li>Pi-hole local DNS: add <code>192.168.33.24 yiji.home.net</code> (Settings → Local DNS Records, or <code>pihole-FTL --config dns.hosts</code>). Without it, <code>home.net</code> resolves to the public internet.</li>
+<li><code>cd ~/yiji &amp;&amp; docker compose pull &amp;&amp; docker compose up -d</code>; open <code>https://yiji.home.net</code> → Connect bank → select all accounts. The first fill stores the 90 days Pekao serves.</li>
 <li>Daily sync + backup: <code>sudo cp deploy/systemd/yiji-sync.* /etc/systemd/system/ &amp;&amp; sudo systemctl daemon-reload &amp;&amp; sudo systemctl enable --now yiji-sync.timer</code>; logs: <code>journalctl -u yiji-sync</code>.</li>
-<li>Update: <code>docker compose pull &amp;&amp; docker compose up -d</code>.</li>
+<li>Update: <code>cd ~/yiji &amp;&amp; docker compose pull &amp;&amp; docker compose up -d</code>.</li>
 </ol>
 <p>The bank callback reaches the server through the GitHub Pages relay: the redirect URL registered in Enable Banking stays the Pages one, and <code>YIJI_PUBLIC_URL</code> puts the server's origin into <code>state</code>. A new image or server never needs the Enable Banking panel changed.</p>
 </section>

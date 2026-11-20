@@ -74,19 +74,6 @@ uv run pytest -m e2e                             # end-to-end tests (first: uv r
 - Use parameterized queries / the ORM — never build SQL, shell commands or HTML from raw input.
 - Return clear, user-safe error messages; never leak stack traces or internals.
 
-## Git and commit policy
-
-- **Branches:** Use `main` unless specified otherwise. 
-- **Commits:** follow [Conventional Commits](https://www.conventionalcommits.org/):
-  `<type>(<scope>): <imperative summary, ≤72 chars>`
-  Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`, `ci`, `build`.
-- One logical change per commit; keep commits small and buildable.
-- Before committing: lint, type check and tests must pass.
-- Never commit secrets, `.env` files, credentials or generated build artifacts.
-- **Do not** commit, push, rebase, force-push, reset, or delete branches unless explicitly asked.
-- Never rewrite history on shared branches. Never use `--no-verify`.
-- PRs: short description of *what* and *why*, notes on testing and any new dependencies.
-
 ## VS Code MCP tools
 
 - When the VS Code MCP server is available, **prefer it over manual edits / grep** for:

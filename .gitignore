@@ -10,3 +10,4 @@ test-results/
 pkeys/
 .yiji/
 .yiji-backups/
+.claude/hooks
