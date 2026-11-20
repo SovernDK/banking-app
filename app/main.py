@@ -12,7 +12,7 @@ def create_app(settings: Settings) -> FastAPI:
     modules = build_modules(settings)
     fastapi_app = FastAPI(title=settings.app_title)
     fastapi_app.include_router(health_router)
-    complete = modules.bank.complete if modules.bank else None
+    complete = modules.bank.service.complete if modules.bank else None
     fastapi_app.include_router(create_bank_router(complete, settings.local_callback_path()))
     dashboard.register(modules)
     ui.run_with(fastapi_app, title=settings.app_title, storage_secret=settings.storage_secret)

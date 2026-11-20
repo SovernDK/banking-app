@@ -1,3 +1,4 @@
+import functools
 import logging
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -5,6 +6,7 @@ from typing import Any, TypeVar
 
 import httpx2
 import jwt
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from pydantic import BaseModel, ValidationError
 
 from app.banking.models import AuthResponse, SessionResponse, Transaction, TransactionsPage
@@ -43,7 +45,16 @@ class EnableBankingClient:
     def __init__(self, http: httpx2.Client, app_id: str, key_path: Path) -> None:
         self._http = http
         self._app_id = app_id
-        self._private_key = load_rsa_private_key(key_path)
+        self._key_path = key_path
+
+    @functools.cached_property
+    def _private_key(self) -> RSAPrivateKey:
+        # Read on first use, so a bad key fails bank requests instead of the whole app's start.
+        # A failed read is not cached: fixing the key file is enough, no restart needed.
+        try:
+            return load_rsa_private_key(self._key_path)
+        except (OSError, ValueError) as error:
+            raise BankApiError(f"The Enable Banking key could not be read: {error}") from error
 
     def start_authorization(
         self,

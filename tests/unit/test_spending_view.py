@@ -80,7 +80,7 @@ def test_main_currency_is_the_one_with_the_most_spending_in_value() -> None:
     assert view.currency == "EUR"
 
 
-def test_without_rates_for_every_payment_the_main_currency_has_the_most_payments() -> None:
+def test_without_any_rate_the_main_currency_has_the_most_payments() -> None:
     view = _view(
         [
             _paid("10", currency="PLN"),
@@ -88,6 +88,20 @@ def test_without_rates_for_every_payment_the_main_currency_has_the_most_payments
             _paid("50000", currency="HUF"),
         ],
         rates=NO_RATES,
+    )
+
+    assert view.default_currency == "PLN"
+
+
+def test_main_currency_compares_value_of_the_payments_with_a_rate_when_some_lack_one() -> None:
+    """A payment with no rate must not decide the main currency, or it changes between visits."""
+    view = _view(
+        [
+            _paid("400", currency="PLN"),
+            _paid("1"),
+            _paid("1"),
+            _paid("50000", currency="HUF"),
+        ],
     )
 
     assert view.default_currency == "PLN"
@@ -417,4 +431,13 @@ def test_counterparty_totals_cover_all_time_spending_with_categories() -> None:
     assert view.counterparty_totals() == [
         CounterpartyTotal("Orlen", Decimal("30"), fuel.id, ai_assigned=True),
         CounterpartyTotal("Biedronka", Decimal("5"), groceries),
+    ]
+
+
+def test_counterparty_totals_list_names_spent_on_only_without_a_rate_last_with_no_amount() -> None:
+    view = _view([_paid("5", payee="Biedronka"), _paid("900", currency="HUF", payee="Orlen")])
+
+    assert view.counterparty_totals() == [
+        CounterpartyTotal("Biedronka", Decimal("5"), None),
+        CounterpartyTotal("Orlen", None, None),
     ]

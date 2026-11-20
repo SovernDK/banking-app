@@ -7,9 +7,8 @@ from typing import Annotated, TypeVar
 
 from pydantic import BaseModel, Field, StringConstraints, TypeAdapter, ValidationError
 
-from app.counterparties import counterparty_key
 from app.json_file import write_atomically
-from app.payments import squash_spaces
+from app.payments import name_key, squash_spaces
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +26,6 @@ class DuplicateCategoryError(ValueError):
     def __init__(self, name: str) -> None:
         super().__init__(f"A category named {name} already exists.")
         self.name = name
-
-
-def _name_key(name: str) -> str:
-    return squash_spaces(name).casefold()
 
 
 def _valid_name(name: str) -> str:
@@ -59,9 +54,9 @@ class CategoryBook(BaseModel):
         return next((category for category in self.categories if category.id == category_id), None)
 
     def find_by_name(self, name: str) -> Category | None:
-        key = _name_key(name)
+        key = name_key(name)
         return next(
-            (category for category in self.categories if _name_key(category.name) == key), None
+            (category for category in self.categories if name_key(category.name) == key), None
         )
 
     def create(self, name: str) -> Category:
@@ -92,7 +87,7 @@ class CategoryBook(BaseModel):
         self.ai_assigned &= self.rules.keys()
 
     def assign(self, counterparty: str, category_id: str | None) -> None:
-        key = counterparty_key(counterparty)
+        key = name_key(counterparty)
         self.ai_assigned.discard(key)
         if category_id is None:
             self.rules.pop(key, None)
@@ -113,7 +108,7 @@ class CategoryBook(BaseModel):
     def assign_suggested(self, counterparty: str, category_id: str) -> bool:
         """Applies an AI model's choice unless the name already has a category; tells whether
         it did."""
-        key = counterparty_key(counterparty)
+        key = name_key(counterparty)
         if key in self.rules:
             return False
         category = self._require(category_id)
@@ -123,12 +118,12 @@ class CategoryBook(BaseModel):
         return True
 
     def is_ai_assigned(self, counterparty: str) -> bool:
-        return counterparty_key(counterparty) in self.ai_assigned
+        return name_key(counterparty) in self.ai_assigned
 
     def category_of(self, counterparty: str | None) -> Category | None:
         if counterparty is None:
             return None
-        category_id = self.rules.get(counterparty_key(counterparty))
+        category_id = self.rules.get(name_key(counterparty))
         return self.get(category_id) if category_id else None
 
     def _give_colour(self, category: Category) -> None:

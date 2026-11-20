@@ -74,9 +74,10 @@ def test_unknown_currency_in_the_url_falls_back_to_the_main_currency(
 def test_payments_without_a_rate_are_left_out_with_a_warning(
     open_dashboard: Callable[..., DashboardPage],
 ) -> None:
+    """With no PLN rate only the euros can be valued, so they set the main currency."""
     dashboard = open_dashboard(rates={})
 
-    expect(dashboard.total).to_have_text("40.00 PLN")
+    expect(dashboard.total).to_have_text("10.00 EUR")
     expect(dashboard.rates_warning).to_contain_text("1 payment is left out")
 
 
@@ -102,12 +103,39 @@ def test_left_out_warning_counts_only_payments_in_the_shown_days(
     expect(dashboard.rates_warning).to_contain_text("1 payment is left out")
 
 
+def test_left_out_warning_shown_by_a_category_edit_keeps_the_page_scroll(
+    open_dashboard: Callable[..., DashboardPage],
+    seed_categories: Callable[[dict[str, list[str]]], None],
+) -> None:
+    seed_categories({"Groceries": ["Biedronka"]})
+    dashboard = open_dashboard(
+        transactions=[
+            debit("10", TODAY, creditor="Biedronka"),
+            debit("90", TODAY, creditor="Orlen", currency="HUF"),
+        ],
+        rates={},
+    )
+    dashboard.filter_by_category("Groceries")
+    expect(dashboard.rates_warning).to_be_hidden()
+    dashboard.categories_legend.scroll_into_view_if_needed()
+    scrolled_to = dashboard.scroll_position()
+    assert scrolled_to > 0
+    dashboard.open_settings()
+    dashboard.expand("Counterparties")
+
+    dashboard.assign_category("Orlen", "Groceries")
+    expect(dashboard.rates_warning).to_contain_text("1 payment is left out")
+    dashboard.close_settings()
+
+    assert dashboard.scroll_position() == scrolled_to
+
+
 def test_rates_outage_warns_and_still_shows_spending(
     open_dashboard: Callable[..., DashboardPage],
 ) -> None:
     dashboard = open_dashboard(failure_status=503)
 
-    expect(dashboard.total).to_have_text("40.00 PLN")
+    expect(dashboard.total).to_have_text("10.00 EUR")
     expect(dashboard.rates_warning.first).to_contain_text("could not be updated")
 
 

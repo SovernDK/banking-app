@@ -92,6 +92,17 @@ def test_connection_ends_on_the_local_day_the_bank_consent_ends(
     assert service.connection_ends_on() == date(2026, 11, 21)
 
 
+def test_connection_ends_on_nothing_once_the_bank_consent_has_ended(
+    service: BankingService, connect: Connect, fake_bank: FakeBankState, clock: Clock
+) -> None:
+    fake_bank.session_valid_until = "2026-11-20T23:30:00-02:00"
+    connect(service)
+
+    clock.current = datetime(2026, 11, 22, tzinfo=UTC)
+
+    assert service.connection_ends_on() is None
+
+
 def test_refresh_requires_a_connection(service: BankingService) -> None:
     with pytest.raises(NotConnectedError):
         service.refresh()

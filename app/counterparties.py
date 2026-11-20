@@ -2,12 +2,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from datetime import date
 
-from app.payments import Payment, counterparty_name, squash_spaces
-
-
-def counterparty_key(name: str) -> str:
-    """The same for two counterparty names that differ only in letter case or spacing."""
-    return squash_spaces(name).casefold()
+from app.payments import Payment, counterparty_name, name_key
 
 
 class Counterparties:
@@ -21,7 +16,7 @@ class Counterparties:
             name = counterparty_name(payment)
             if name is None:
                 continue
-            spellings = usage[counterparty_key(name)]
+            spellings = usage[name_key(name)]
             count, newest = spellings.get(name, (0, payment.booked_on))
             spellings[name] = (count + 1, max(newest, payment.booked_on))
         self._labels = {
@@ -30,4 +25,4 @@ class Counterparties:
 
     def label(self, name: str) -> str:
         """The spelling to show for `name`; a name no payment went to is shown as given."""
-        return self._labels.get(counterparty_key(name), name)
+        return self._labels.get(name_key(name), name)

@@ -1,4 +1,4 @@
-from app.ui.components.alert import alert
+from app.ui.components.alert import Alert, alert
 from app.ui.components.category_list import CategoryEntry, CategoryList
 from app.ui.components.chart import chart
 from app.ui.components.chip import chip
@@ -17,6 +17,7 @@ from app.ui.components.spending_filters import CategoryOption, SpendingFilters
 from app.ui.components.spending_overview import SpendingOverview
 
 __all__ = [
+    "Alert",
     "CategoryEntry",
     "CategoryList",
     "CategoryOption",

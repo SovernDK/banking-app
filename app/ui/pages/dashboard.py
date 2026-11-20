@@ -1,6 +1,7 @@
 import functools
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
+from datetime import date
 
 from nicegui import run, ui
 
@@ -30,6 +31,7 @@ from app.spending_view import (
     ViewQuery,
 )
 from app.ui.components import (
+    Alert,
     CategoryEntry,
     CategoryOption,
     Donut,
@@ -104,7 +106,6 @@ def _spending_view(
     shell: PageShell,
     band: ui.column,
     store: CategoryStore,
-    book: CategoryBook,
     auto_categoriser: AutoCategoriser | None,
 ) -> None:
     language = shell.language
@@ -117,20 +118,15 @@ def _spending_view(
         with band:
             ui.navigate.history.replace(view.url(query))
 
-    def show_left_out(left_out: int) -> None:
-        left_out_notice.clear()
-        left_out_notice.set_visibility(left_out > 0)
-        if left_out:
-            with left_out_notice:
-                alert(
-                    texts.NOT_CONVERTED(language, left_out, currency=currency), testid="rates-error"
-                )
-
     spending_overview: SpendingOverview | None = None
 
     def show_overview() -> None:
         overview = view.overview(query)
-        show_left_out(overview.left_out)
+        left_out_notice.show(
+            texts.NOT_CONVERTED(language, overview.left_out, currency=currency)
+            if overview.left_out
+            else None
+        )
         if spending_overview is None:
             return
         spending_overview.show(
@@ -145,39 +141,37 @@ def _spending_view(
     def overview() -> None:
         nonlocal spending_overview
         spending_overview = SpendingOverview(currency, language, dark=bool(dark_mode.value))
-        show_overview()
 
     def category_options() -> list[CategoryOption]:
         return [
             *(
                 CategoryOption(id=category.id, name=category.name, colour_slot=category.colour_slot)
-                for category in book.categories
+                for category in view.book.categories
             ),
             CategoryOption(id=UNCATEGORISED, name=texts.UNCATEGORISED(language), colour_slot=None),
         ]
 
     def assigned_category(counterparty: str) -> str | None:
-        category = book.category_of(counterparty)
+        category = view.book.category_of(counterparty)
         return category.id if category else None
 
     def category_entries() -> list[CategoryEntry]:
         return [
-            CategoryEntry(id=category.id, name=category.name, usage=book.usage(category.id))
-            for category in book.categories
+            CategoryEntry(id=category.id, name=category.name, usage=view.book.usage(category.id))
+            for category in view.book.categories
         ]
 
     def category_names() -> dict[str, str]:
-        return {category.id: category.name for category in book.categories}
+        return {category.id: category.name for category in view.book.categories}
 
     category_donut: Donut | None = None
 
     def show_categories() -> None:
         nonlocal query
-        shown = view.breakdown(query.period)
-        if category_donut is not None and shown is not None:
-            category_donut.update(_donut_slices(shown.categories, language))
+        if category_donut is not None:
+            category_donut.update(_donut_slices(view.category_slices(query.period), language))
         settings.update(
-            category_entries(), category_names(), assigned_category, book.is_ai_assigned
+            category_entries(), category_names(), assigned_category, view.book.is_ai_assigned
         )
         checked = view.checked(query)
         if checked != query:
@@ -187,14 +181,13 @@ def _spending_view(
         show_overview()
 
     async def change_and_show(change: Callable[[CategoryBook], None]) -> None:
-        nonlocal book, view
+        nonlocal view
 
         def changed(fresh: CategoryBook) -> CategoryBook:
             change(fresh)
             return fresh
 
-        book = await run.io_bound(store.update, changed)
-        view = view.with_book(book)
+        view = view.with_book(await run.io_bound(store.update, changed))
         show_categories()
 
     async def change_category(counterparty: str, value: str | None) -> None:
@@ -222,9 +215,10 @@ def _spending_view(
         await change_and_show(lambda fresh: fresh.delete(category_id))
 
     async def categorise_with_ai(categoriser: AutoCategoriser) -> None:
-        nonlocal book, view
+        nonlocal view
         try:
-            assigned = await run.io_bound(categoriser.run, view.payments)
+            # Every stored payment, as the daily sync sends, not only those with a rate.
+            assigned = await run.io_bound(categoriser.run, view.stored_payments)
         except CategorisationUnavailableError:
             ui.notify(texts.AI_UNAVAILABLE(language), type="negative")
         else:
@@ -233,8 +227,7 @@ def _spending_view(
             else:
                 ui.notify(texts.AI_NOTHING_ASSIGNED(language))
         # A failure part way still keeps the batches answered before it.
-        book = await run.io_bound(store.load)
-        view = view.with_book(book)
+        view = view.with_book(await run.io_bound(store.load))
         show_categories()
 
     settings = SettingsDialog(
@@ -311,42 +304,48 @@ def _spending_view(
         filters = SpendingFilters(
             view.counterparties, category_options(), query.spending_filter, choose, language
         )
-        left_out_notice = ui.column().classes("w-full")
         overview()
+        # Below the chart, so the notice coming and going on an edit never pushes the chart.
+        left_out_notice = Alert(testid="rates-error")
+        show_overview()
     breakdown()
 
-    def redraw() -> None:
-        overview.refresh()
+    async def redraw() -> None:
+        # Not awaited, the refresh runs later and `show_overview` would fill the old chart.
+        await overview.refresh()
+        show_overview()
         breakdown.refresh()
 
     dark_mode.on_value_change(redraw)
 
 
 def _show_connection(
-    refreshed: Refreshed, service: BankingService, warning_days: int, language: Language
-) -> bool:
+    refreshed: Refreshed,
+    connection_ends_on: date | None,
+    service: BankingService,
+    warning_days: int,
+    language: Language,
+) -> None:
     """Says why the bank could not be asked and offers to connect it, or counts down to the end
-    of the connection. Tells whether the bank needs connecting."""
+    of the connection."""
     if refreshed.bank is BankStatus.SESSION_EXPIRED:
         alert(texts.BANK_ERRORS[BankErrorCode.SESSION_EXPIRED](language))
     elif refreshed.bank is BankStatus.BANK_UNAVAILABLE:
         alert(texts.BANK_ERRORS[BankErrorCode.BANK_UNAVAILABLE](language))
-    needs_connection = refreshed.bank in (BankStatus.NOT_CONNECTED, BankStatus.SESSION_EXPIRED)
-    if needs_connection and not refreshed.payments:
+    if refreshed.needs_connection and not refreshed.payments:
         empty_state(texts.NO_TRANSACTIONS(language))
-    if needs_connection:
+    if refreshed.needs_connection:
         primary_button(
             texts.CONNECT_BANK(language), _connector(service, language), testid="connect-bank"
         )
-    elif refreshed.connection_ends_on is not None:
+    elif connection_ends_on is not None:
         reconnect_notice(
-            refreshed.connection_ends_on,
+            connection_ends_on,
             warning_days,
             language,
             service.today,
             _connector(service, language),
         )
-    return needs_connection
 
 
 def register(modules: Modules) -> None:
@@ -360,8 +359,7 @@ def register(modules: Modules) -> None:
         bank_error: str | None = None,
     ) -> None:
         settings = modules.settings
-        service = modules.bank
-        refresher = modules.refresher
+        bank = modules.bank
         error = _error_from(bank_error)
         with page_shell(settings.app_title, settings.default_language) as shell:
             language = shell.language
@@ -372,33 +370,37 @@ def register(modules: Modules) -> None:
                     )
                     if settings.enable_banking_environment == "sandbox":
                         chip("science", texts.SANDBOX(language))
-                if service is None or refresher is None:
+                if bank is None:
                     alert(texts.BANK_ERRORS[BankErrorCode.NOT_CONFIGURED](language))
                     return
+                service = bank.service
                 if error:
                     alert(texts.BANK_ERRORS[error](language))
-                refreshed = await run.io_bound(refresher.refresh)
-                needs_connection = _show_connection(
-                    refreshed, service, settings.reconnect_warning_days, language
+                refreshed = await run.io_bound(bank.refresher.refresh)
+                _show_connection(
+                    refreshed,
+                    await run.io_bound(service.connection_ends_on),
+                    service,
+                    settings.reconnect_warning_days,
+                    language,
                 )
                 if not refreshed.payments:
-                    if not needs_connection:
+                    if not refreshed.needs_connection:
                         empty_state(texts.NO_RECENT_SPENDING(language))
                     return
                 if refreshed.rates_error is not None:
                     alert(texts.RATES_UNAVAILABLE(language), testid="rates-error")
                 store = modules.category_store
-                book = await run.io_bound(store.load)
                 view = SpendingView(
                     refreshed.payments,
                     refreshed.rates,
                     display_currencies=settings.display_currencies,
                     requested_currency=currency,
-                    book=book,
+                    book=await run.io_bound(store.load),
                     today=service.today(),
                     slice_limit=len(LIGHT.categories),
                 )
             query = view.parse(
                 period=period, compare=compare, counterparty=counterparty, category=category
             )
-            _spending_view(view, query, shell, band, store, book, modules.auto_categoriser)
+            _spending_view(view, query, shell, band, store, modules.auto_categoriser)

@@ -26,7 +26,7 @@ class SyncResult(IntEnum):
 def sync(refresher: Refresher, auto_categoriser: AutoCategoriser | None = None) -> SyncResult:
     refreshed = refresher.refresh(force=True)
     result = SyncResult.SYNCED
-    if refreshed.bank in (BankStatus.NOT_CONNECTED, BankStatus.SESSION_EXPIRED):
+    if refreshed.needs_connection:
         logger.error("Not synced: the bank connection is missing or expired; reconnect in Yiji.")
         result = SyncResult.NEEDS_RECONNECT
     elif refreshed.bank is BankStatus.BANK_UNAVAILABLE:
@@ -55,10 +55,10 @@ def _categorise(auto_categoriser: AutoCategoriser, payments: list[Payment]) -> N
 
 
 def run(modules: Modules) -> SyncResult:
-    if modules.refresher is None:
+    if modules.bank is None:
         logger.error("Not synced: Enable Banking credentials are not configured.")
         return SyncResult.FAILED
-    return sync(modules.refresher, modules.auto_categoriser)
+    return sync(modules.bank.refresher, modules.auto_categoriser)
 
 
 def main() -> int:

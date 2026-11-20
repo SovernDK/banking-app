@@ -1,6 +1,6 @@
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from enum import StrEnum
 
 from app.banking.client import BankApiError, BankSessionExpiredError
@@ -22,14 +22,17 @@ class BankStatus(StrEnum):
 class Refreshed:
     """What a refresh left behind. The stored payments and rates are there whatever failed, so
     the dashboard can keep showing them. `bank_error` and `rates_error` give the reason a part
-    failed; `connection_ends_on` is set only while a bank is connected."""
+    failed."""
 
     bank: BankStatus
     payments: list[Payment]
     rates: ExchangeRates
-    connection_ends_on: date | None
     bank_error: str | None = None
     rates_error: str | None = None
+
+    @property
+    def needs_connection(self) -> bool:
+        return self.bank in (BankStatus.NOT_CONNECTED, BankStatus.SESSION_EXPIRED)
 
 
 class Refresher:
@@ -74,12 +77,10 @@ class Refresher:
             self._refresh_rates(payments)
         except RatesUnavailableError as error:
             rates_error = str(error)
-        connected = bank in (BankStatus.UPDATED, BankStatus.BANK_UNAVAILABLE)
         return Refreshed(
             bank=bank,
             payments=payments,
             rates=self._rate_book.rates(),
-            connection_ends_on=self._bank.connection_ends_on() if connected else None,
             bank_error=bank_error,
             rates_error=rates_error,
         )

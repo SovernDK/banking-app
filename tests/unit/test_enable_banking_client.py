@@ -115,6 +115,20 @@ def _client_answering(
     return EnableBankingClient(http=http, app_id=TEST_APP_ID, key_path=key_file)
 
 
+@pytest.mark.parametrize("key_text", [None, "not a key"])
+def test_unusable_key_fails_the_request_not_the_client(
+    tmp_path: Path, key_text: str | None
+) -> None:
+    """A bad key must not stop the app starting; only bank requests fail."""
+    key_path = tmp_path / "key.pem"
+    if key_text is not None:
+        key_path.write_text(key_text)
+    client = _client_answering(lambda request: httpx2.Response(200), key_path)
+
+    with pytest.raises(BankApiError):
+        client.create_session(FAKE_CODE)
+
+
 def test_network_failure_raises_bank_api_error(key_file: Path) -> None:
     def refuse(request: httpx2.Request) -> httpx2.Response:
         raise httpx2.ConnectError("refused", request=request)

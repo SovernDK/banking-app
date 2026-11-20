@@ -52,9 +52,10 @@ class BankingService:
     def connection_ends_on(self) -> date | None:
         """The local day the bank consent ends; None while no bank is connected."""
         session = self._store.load().session
-        if session is None:
+        now = self._now()
+        if session is None or session.valid_until <= now:
             return None
-        return session.valid_until.astimezone(self._now().tzinfo).date()
+        return session.valid_until.astimezone(now.tzinfo).date()
 
     def _live_session(self, stored: StoredState) -> StoredSession:
         session = stored.session

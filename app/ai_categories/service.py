@@ -7,8 +7,8 @@ import httpx2
 from app.ai_categories.client import CounterpartySample, OllamaCategoriser
 from app.categories import CategoryBook, CategoryStore
 from app.config import Settings
-from app.counterparties import Counterparties, counterparty_key
-from app.payments import Payment, counterparty_name
+from app.counterparties import Counterparties
+from app.payments import Payment, counterparty_name, name_key
 
 
 def uncategorised_samples(
@@ -21,7 +21,7 @@ def uncategorised_samples(
         name = counterparty_name(payment)
         if name is None or book.category_of(name) is not None:
             continue
-        key = counterparty_key(name)
+        key = name_key(name)
         sample = samples.setdefault(
             key, CounterpartySample(names.label(name), (), payment.payment_method)
         )

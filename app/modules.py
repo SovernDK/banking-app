@@ -39,14 +39,19 @@ class DataFiles:
 
 
 @dataclass(frozen=True)
+class Bank:
+    service: BankingService
+    refresher: Refresher
+
+
+@dataclass(frozen=True)
 class Modules:
-    """`bank` and `refresher` are None until Enable Banking credentials are configured, and
-    `auto_categoriser` until an Ollama key is."""
+    """`bank` is None until Enable Banking credentials are configured, and `auto_categoriser`
+    until an Ollama key is."""
 
     settings: Settings
     files: DataFiles
-    bank: BankingService | None
-    refresher: Refresher | None
+    bank: Bank | None
     category_store: CategoryStore
     auto_categoriser: AutoCategoriser | None
 
@@ -55,37 +60,16 @@ def build_modules(settings: Settings) -> Modules:
     files = DataFiles.under(settings.data_dir)
     history = HistoryStore(files.database)
     category_store = CategoryStore(files.categories, settings.starter_categories)
-    bank = _build_bank(settings, files, history)
-    refresher = None
-    if bank is not None:
-        rates_http = httpx2.Client(
-            base_url=str(settings.exchange_rates_api_url),
-            timeout=settings.exchange_rates_timeout_seconds,
-        )
-        refresher = Refresher(
-            bank,
-            history,
-            RateBook(
-                files.database,
-                ExchangeRateClient(rates_http),
-                settings.exchange_rate_lookback_days,
-            ),
-            display_currencies=settings.display_currencies,
-            max_age=timedelta(minutes=settings.transactions_refresh_minutes),
-        )
     return Modules(
         settings=settings,
         files=files,
-        bank=bank,
-        refresher=refresher,
+        bank=_build_bank(settings, files, history),
         category_store=category_store,
         auto_categoriser=build_auto_categoriser(settings, category_store),
     )
 
 
-def _build_bank(
-    settings: Settings, files: DataFiles, history: HistoryStore
-) -> BankingService | None:
+def _build_bank(settings: Settings, files: DataFiles, history: HistoryStore) -> Bank | None:
     try:
         app_id, key_path = settings.enable_banking_credentials()
     except MissingCredentialsError:
@@ -94,7 +78,7 @@ def _build_bank(
         base_url=str(settings.enable_banking_api_url),
         timeout=settings.enable_banking_timeout_seconds,
     )
-    return BankingService(
+    service = BankingService(
         client=EnableBankingClient(http=http, app_id=app_id, key_path=key_path),
         store=BankStore(files.bank),
         history=history,
@@ -103,3 +87,19 @@ def _build_bank(
         ),
         settings=settings,
     )
+    rates_http = httpx2.Client(
+        base_url=str(settings.exchange_rates_api_url),
+        timeout=settings.exchange_rates_timeout_seconds,
+    )
+    refresher = Refresher(
+        service,
+        history,
+        RateBook(
+            files.database,
+            ExchangeRateClient(rates_http),
+            settings.exchange_rate_lookback_days,
+        ),
+        display_currencies=settings.display_currencies,
+        max_age=timedelta(minutes=settings.transactions_refresh_minutes),
+    )
+    return Bank(service, refresher)

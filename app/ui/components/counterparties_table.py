@@ -31,7 +31,12 @@ class CounterpartiesTable:
                     "yiji-divider flex flex-wrap items-center gap-x-4 gap-y-1 py-2"
                 ):
                     ui.label(row.name).classes("flex-1 min-w-40 text-sm")
-                    ui.label(fmt.money(row.amount, currency)).classes("text-sm")
+                    amount = (
+                        texts.NO_RATE(language)
+                        if row.amount is None
+                        else fmt.money(row.amount, currency)
+                    )
+                    ui.label(amount).classes("text-sm")
                     self._ai_badges[row.name] = _ai_badge(row.ai_assigned, language)
                     select = (
                         ui.select(

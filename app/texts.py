@@ -97,6 +97,7 @@ CONVERTED_COMPARISON = Text(
 THIS_PERIOD = Text(pl="Ten okres", en="This period", ja="今期")
 
 CURRENCY = Text(pl="Waluta", en="Currency", ja="通貨")
+NO_RATE = Text(pl="brak kursu", en="no rate", ja="レートなし")
 RATES_UNAVAILABLE = Text(
     pl="Nie udało się pobrać kursów walut; kwoty mogą korzystać ze starszych kursów.",
     en="Exchange rates could not be updated; amounts may use older rates.",

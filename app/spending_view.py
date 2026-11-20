@@ -9,8 +9,8 @@ from typing import Generic, TypeVar
 from urllib.parse import urlencode
 
 from app.categories import CategoryBook
-from app.counterparties import Counterparties, counterparty_key
-from app.payments import Payment, counterparty_name, display_name
+from app.counterparties import Counterparties
+from app.payments import Payment, counterparty_name, display_name, name_key
 from app.rates.book import ExchangeRates, convert_payments
 from app.rates.client import EURO
 from app.spending import Comparison, DailySpending, Period
@@ -81,8 +81,10 @@ class Breakdown:
 
 @dataclass(frozen=True)
 class CounterpartyTotal:
+    """`amount` is None when no payment to the name has a rate into the display currency."""
+
     name: str
-    amount: Decimal
+    amount: Decimal | None
     category_id: str | None
     ai_assigned: bool = False
 
@@ -112,6 +114,8 @@ class SpendingView:
         self.currency = (
             requested_currency if requested_currency in self.currencies else self.default_currency
         )
+        self.stored_payments = list(payments)
+        """Every payment as the bank booked it, whether or not it has a rate."""
         conversion = convert_payments(payments, self.currency, rates)
         self.payments = conversion.payments
         """Every payment with a rate, in the display currency."""
@@ -123,6 +127,10 @@ class SpendingView:
         self._book = book
         self._today = today
         self._slice_limit = slice_limit
+
+    @property
+    def book(self) -> CategoryBook:
+        return self._book
 
     def with_book(self, book: CategoryBook) -> "SpendingView":
         changed = copy.copy(self)
@@ -183,7 +191,7 @@ class SpendingView:
 
     def breakdown(self, period: Period) -> Breakdown | None:
         """Where the period's spending went; None when nothing was spent in it."""
-        in_period = _booked_within(self.payments, period, [self._today])
+        in_period = self._in_period(period)
         if not in_period:
             return None
         counterparties = _shares(in_period, self._label)
@@ -196,17 +204,30 @@ class SpendingView:
             counterparty_slices.append(Slice(SliceKind.OTHER, rest))
         return Breakdown(counterparty_slices, self._category_slices(in_period))
 
+    def category_slices(self, period: Period) -> list[Slice]:
+        """The categories part of `breakdown`, for when only the categories changed."""
+        return self._category_slices(self._in_period(period))
+
     def counterparty_totals(self) -> list[CounterpartyTotal]:
-        """All-time spending per counterparty name, biggest first, with its category."""
-        return [
-            CounterpartyTotal(
-                name=share.key,
-                amount=share.amount,
-                category_id=self._category_id(share.key),
-                ai_assigned=self._book.is_ai_assigned(share.key),
-            )
+        """All-time spending per counterparty name, biggest first, with its category. Names
+        spent on only in payments without a rate come last, so they can be categorised too."""
+        totals: dict[str, Decimal | None] = {
+            share.key: share.amount
             for share in _shares(self.payments, self._named_label)
             if share.key is not None
+        }
+        for payment in self.stored_payments:
+            label = self._named_label(payment)
+            if label is not None:
+                totals.setdefault(label, None)
+        return [
+            CounterpartyTotal(
+                name=name,
+                amount=amount,
+                category_id=self._category_id(name),
+                ai_assigned=self._book.is_ai_assigned(name),
+            )
+            for name, amount in totals.items()
         ]
 
     def _category_slices(self, payments: list[Payment]) -> list[Slice]:
@@ -234,6 +255,9 @@ class SpendingView:
             slices.append(Slice(SliceKind.UNCATEGORISED, uncategorised))
         return slices
 
+    def _in_period(self, period: Period) -> list[Payment]:
+        return _booked_within(self.payments, period, [self._today])
+
     def _label(self, payment: Payment) -> str:
         return self._names.label(display_name(payment))
 
@@ -250,10 +274,8 @@ class SpendingView:
         if counterparty and category:
             return ALL
         if counterparty:
-            wanted = counterparty_key(counterparty)
-            known = next(
-                (name for name in self.counterparties if counterparty_key(name) == wanted), None
-            )
+            wanted = name_key(counterparty)
+            known = next((name for name in self.counterparties if name_key(name) == wanted), None)
             return SpendingFilter(counterparty=known) if known else ALL
         if category == UNCATEGORISED or (category and self._book.get(category)):
             return SpendingFilter(category_id=category)
@@ -261,8 +283,8 @@ class SpendingView:
 
     def _matches(self, payment: Payment, spending_filter: SpendingFilter) -> bool:
         if spending_filter.counterparty:
-            wanted = counterparty_key(spending_filter.counterparty)
-            return counterparty_key(display_name(payment)) == wanted
+            wanted = name_key(spending_filter.counterparty)
+            return name_key(display_name(payment)) == wanted
         if spending_filter.category_id:
             category_id = self._category_id(counterparty_name(payment))
             return (category_id or UNCATEGORISED) == spending_filter.category_id
@@ -292,21 +314,19 @@ def _filter_values(spending_filter: SpendingFilter) -> dict[str, str]:
 
 
 def _main_currency(payments: Iterable[Payment], rates: ExchangeRates) -> str:
-    """The currency with the most spending, valued in euros at each payment's rate. Amounts in
-    different currencies can't be compared without rates, so when any payment lacks one the
-    currency with the most payments wins, the bigger amount breaking a tie."""
+    """The currency with the most spending, valued in euros at each payment's rate. Payments
+    without a rate are left out of the comparison rather than spoiling it, so one missing rate
+    does not change the main currency, and with it the meaning of a saved link. With no rate at
+    all the currency with the most payments wins, the bigger amount breaking a tie."""
     values: dict[str, Decimal] = defaultdict(Decimal)
     counts: dict[str, tuple[int, Decimal]] = defaultdict(lambda: (0, Decimal(0)))
-    comparable = True
     for payment in payments:
         count, amount = counts[payment.currency]
         counts[payment.currency] = (count + 1, amount + payment.amount)
         value = rates.convert(payment.amount, payment.currency, EURO, payment.booked_on)
-        if value is None:
-            comparable = False
-        else:
+        if value is not None:
             values[payment.currency] += value
-    if comparable:
+    if values:
         return max(values, key=values.__getitem__)
     return max(counts, key=counts.__getitem__)
 

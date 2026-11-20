@@ -57,6 +57,7 @@ def test_dark_mode_stays_on_through_filter_changes_and_reloads(
     expect(dashboard.spending_chart).to_be_visible()
     dashboard.dark_mode_toggle.click()
     expect(page.locator("body")).to_have_class(re.compile(r"body--dark"))
+    expect(dashboard.total).to_have_text("12.50 EUR")
 
     change(dashboard)
 

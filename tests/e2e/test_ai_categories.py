@@ -15,23 +15,38 @@ def _days_ago(days: int) -> date:
 
 
 @pytest.fixture
+def open_counterparties(
+    page: Page,
+    fake_bank: Callable[..., None],
+    fake_rates: Callable[..., None],
+    fake_ollama: Callable[..., None],
+) -> Callable[[list[dict[str, object]]], DashboardPage]:
+    """Connects a bank with the given transactions and opens Settings → Counterparties."""
+
+    def open_with(transactions: list[dict[str, object]]) -> DashboardPage:
+        fake_bank(transactions=transactions)
+        dashboard = DashboardPage(page)
+        dashboard.open()
+        dashboard.connect_bank()
+        expect(dashboard.categories_legend).to_be_visible()
+        dashboard.open_settings()
+        dashboard.expand("Counterparties")
+        return dashboard
+
+    return open_with
+
+
+@pytest.fixture
 def dashboard(
-    page: Page, fake_bank: Callable[..., None], fake_ollama: Callable[..., None]
+    open_counterparties: Callable[[list[dict[str, object]]], DashboardPage],
 ) -> DashboardPage:
-    fake_bank(
-        transactions=[
+    return open_counterparties(
+        [
             debit("40", _days_ago(1), creditor="Biedronka"),
             debit("12", _days_ago(2), creditor="ŻABKA POLSKA", remittance=["Zakup BLIK"]),
             debit("25", _days_ago(3), creditor="Jan Kowalski"),
         ]
     )
-    dashboard = DashboardPage(page)
-    dashboard.open()
-    dashboard.connect_bank()
-    expect(dashboard.categories_legend).to_be_visible()
-    dashboard.open_settings()
-    dashboard.expand("Counterparties")
-    return dashboard
 
 
 def test_ai_fills_in_categories_the_user_can_then_correct(
@@ -82,3 +97,20 @@ def test_ai_outage_is_explained_and_changes_nothing(
     expect(dashboard.legend_entry(dashboard.categories_legend, "Uncategorised")).to_contain_text(
         "77.00 EUR"
     )
+
+
+def test_ai_categorises_counterparties_paid_only_in_a_currency_without_a_rate(
+    open_counterparties: Callable[[list[dict[str, object]]], DashboardPage],
+    fake_ollama: Callable[..., None],
+) -> None:
+    dashboard = open_counterparties(
+        [
+            debit("40", _days_ago(1), creditor="Biedronka"),
+            debit("90", _days_ago(2), creditor="Orlen", currency="HUF"),
+        ]
+    )
+    fake_ollama(categories={"Orlen": "Transport"})
+
+    dashboard.categorise_with_ai()
+
+    expect(dashboard.category_select("Orlen")).to_have_value("Transport")

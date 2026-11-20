@@ -111,12 +111,12 @@ flowchart LR
   CN -->|named| PY["Counterparties.label<br/>case/space variants → spelling on most payments"]
   CN -->|nameless| PM["stored payment method<br/>e.g. ATM withdrawal"] --> PY
   PY --> PD((Counterparties donut))
-  CN --> RU{Category rule?<br/>by counterparty_key}
+  CN --> RU{Category rule?<br/>by name_key}
   RU -->|yes| CD((Categories donut))
   RU -->|no| UC[Uncategorised] --> CD
   subgraph SD[Settings modal · ⚙ in header · boxes start collapsed]
     MD[Categories box<br/>rename · delete]
-    CT[Counterparties box<br/>all-time names, select / type new name]
+    CT[Counterparties box<br/>all-time names, select / type new name<br/>names with no rate last, marked 'no rate']
   end
   CT -->|assign| RU
   MD --> RU
@@ -132,7 +132,7 @@ flowchart LR
 <h2>AI categories</h2>
 <pre class="mermaid">
 sequenceDiagram
-  participant T as Daily sync / ⚙ "Categorise with AI"
+  participant T as Daily sync / ⚙ "Categorise with AI" (both send every stored payment)
   participant A as AutoCategoriser
   participant C as categories.json
   participant O as Ollama (YIJI_AI_CATEGORY_MODEL)
@@ -181,9 +181,9 @@ flowchart LR
 <li><b>Bank connection gone:</b> the dashboard keeps showing stored history with the alert and Connect button above it.</li>
 <li><b>Rates:</b> ECB reference rates (EUR base, cross rates through EUR). Earlier days are fetched once; today is re-checked after the refresh window. A rates outage shows a warning and keeps older rates.</li>
 <li><b>Choose currency:</b> toggle next to Compare (<code>YIJI_DISPLAY_CURRENCIES</code> + any currency in the history); choice in <code>?currency=</code> (left out for the default); changing it reloads the page.</li>
-<li><b>Default currency:</b> the main currency values each currency's spending in euros at its payment days' rates; if any payment has no rate, the currency with most payments wins (bigger amount breaks a tie).</li>
+<li><b>Default currency:</b> the main currency values each currency's spending in euros at its payment days' rates; payments with no rate are left out of the comparison, so one missing rate doesn't change it; only with no rate at all does the currency with most payments win (bigger amount breaks a tie).</li>
 <li><b>Comparison across rates:</b> each period uses its own days' rates, so in a converted view the % change includes exchange-rate moves. A muted note under the total says so only when a converted payment falls in the shown days (<code>KpiTile</code> note, <code>total-note</code>).</li>
-<li><b>Shown days:</b> the selected period and its comparison window, narrowed by the counterparty/category filter (<code>SpendingView.overview</code>). The "left out" warning (<code>rates-error</code>, under the filters) and the note both follow them and update in place on every period, comparison or filter change.</li>
+<li><b>Shown days:</b> the selected period and its comparison window, narrowed by the counterparty/category filter (<code>SpendingView.overview</code>). The "left out" warning (<code>rates-error</code>, under the spending chart so it never pushes the chart) and the note both follow them and update in place on every period, comparison or filter change.</li>
 </ul>
 <h3>Daily sync and backup</h3>
 <pre>uv run python -m app.sync     # exit 0 synced · 1 bank/rates error or not configured · 2 reconnect needed; then AI categories if OLLAMA_API_KEY is set
@@ -206,7 +206,7 @@ flowchart LR
   ED[Settings category edit] -->|"revalidate: deleted → All"| F
 </pre>
 <ul>
-<li>Counterparty matching uses the Counterparties donut's names (case/space-insensitive via <code>counterparty_key</code>, nameless → payment method); category matching uses the category rules. The donuts ignore the filter.</li>
+<li>Counterparty matching uses the Counterparties donut's names (case/space-insensitive via <code>name_key</code>, nameless → payment method); category matching uses the category rules. The donuts ignore the filter.</li>
 <li>Total label: "Spent on &lt;name&gt;, last month"; under it "▲ +12.0% vs 100.00 EUR a month ago" (more spending = loss colour, less = gain, no history = muted, no %). The filter narrows both periods. Nothing in range → "No spending in this period." with the filter kept.</li>
 <li>Logic: <code>app/spending_view.py</code> (pure; <code>parse</code> / <code>url</code> / <code>checked</code> for the URL and stale filters). UI: <code>SpendingFilters</code> + <code>SpendingOverview</code>, both updated in place.</li>
 <li>Layout: toggles (period · compare · currency) on the first row; Counterparty · Category · Clear filters on a row of their own below, never wrapping. The selects grow to at most 224px and shrink when space is short; on phones Clear filters shows only its icon.</li>
@@ -238,7 +238,7 @@ flowchart LR
 sequenceDiagram
   Browser->>FastAPI: GET /
   FastAPI->>NiceGUI: @ui.page("/") dashboard_page
-  NiceGUI->>NiceGUI: refresher.refresh() → Refreshed (bank status, payments, rates, rates error, connection end) · _show_connection maps it to alerts / Connect / reconnect notice
+  NiceGUI->>NiceGUI: bank.refresher.refresh() → Refreshed (bank status, payments, rates, rates error) · connection end from BankingService.connection_ends_on() (None unless a live session) · _show_connection maps them to alerts / Connect / reconnect notice
   NiceGUI->>NiceGUI: not configured → alert · not connected, no history → empty_state + Connect · not connected with history → Connect + history · otherwise → period_filter, comparison_filter, currency_filter, SpendingFilters, SpendingOverview, Donut ×2 + ⚙ SettingsDialog (CategoryList + CounterpartiesTable) · category edits update Donut, filters, overview, list and table in place (no re-render, no scroll jump)
   NiceGUI->>NiceGUI: connected, consent ends within YIJI_RECONNECT_WARNING_DAYS → "ends in N days" / "ends today" notice + Reconnect (count updated hourly in place)
   NiceGUI->>NiceGUI: session ended → stored session cleared, "expired" alert + Connect · other bank error → "unavailable" alert, session kept · both still show stored history
@@ -252,7 +252,7 @@ sequenceDiagram
 <pre>
 app/
   main.py            create_app(Settings()): builds the modules, mounts the bank router and NiceGUI (ui.run_with)
-  modules.py         build_modules(settings) → Modules (bank, refresher, category store, AI categoriser); DataFiles: the data-directory layout (bank.json, categories.json, yiji.sqlite3). The app, sync and backup each start here; nothing reads settings or builds a module elsewhere
+  modules.py         build_modules(settings) → Modules (bank = service + refresher together, or None without credentials; category store; AI categoriser); DataFiles: the data-directory layout (bank.json, categories.json, yiji.sqlite3). The app, sync and backup each start here; nothing reads settings or builds a module elsewhere
   config.py          Settings (pydantic-settings; YIJI_* + ENABLE_BANKING_*)
   i18n.py            Language (pl/en/ja, labels PL/EN/JP), Text, Plural
   texts.py           Every user-facing string, in all languages
@@ -260,7 +260,7 @@ app/
   api/bank.py        Bank callback at /api/bank/callback + local redirect path (e.g. /callback)
   tls.py             python -m app.tls: self-signed localhost certificate for HTTPS
   banking/           Enable Banking client, models, bank.json store, history (SQLite payments), service, error codes
-  payments.py        Payment (the only bank data kept), counterparty_name, display_name
+  payments.py        Payment (the only bank data kept), counterparty_name, display_name, name_key (the one case/space sameness rule, for counterparties and category names)
   database.py        yiji.sqlite3 schema + connect (WAL, busy timeout)
   rates/             Frankfurter client; RateBook (stored rates, missing-range fetch), ExchangeRates, convert_payments
   refresh.py         Refresher.refresh(force): bank + rates in one step (works out which rates to fetch), outcome as a Refreshed value; shared by the dashboard and the daily sync
@@ -270,7 +270,7 @@ app/
   spending_view.py   SpendingView: everything the dashboard shows, from payments + rates + categories (pure, no I/O); ViewQuery, SpendingFilter
   payment_methods.py PaymentMethod enum
   bank_profiles/     Per-bank mapping of transaction JSON → Payment: generic (ISO codes), mock_aspsp, pekao; profile_for()
-  counterparties.py  counterparty_key (the one sameness rule) + Counterparties.label (one spelling per name, used by the view, settings and AI samples)
+  counterparties.py  Counterparties.label (one spelling per name, used by the view, settings and AI samples)
   categories.py      Category, CategoryBook (rules by counterparty name, AI-assigned marks), CategoryStore (load/save/update)
   ai_categories/     OllamaCategoriser (chat API, answers by id), AutoCategoriser (batches, saves), build_auto_categoriser(settings, store)
   json_file.py       Atomic JSON write shared by the stores
@@ -397,7 +397,7 @@ flowchart LR
 <tr><td><code>YIJI_AI_CATEGORY_EXAMPLES</code></td><td>100</td><td>User's own rules sent as examples, 0–500</td></tr>
 <tr><td><code>YIJI_AI_CATEGORY_TITLES_PER_NAME</code></td><td>3</td><td>Payment titles sent per name, 0–10</td></tr>
 <tr><td><code>ENABLE_BANKING_APP_ID</code></td><td>—</td><td>Enable Banking application ID (production)</td></tr>
-<tr><td><code>ENABLE_BANKING_KEY_PATH</code></td><td>—</td><td>Private key file; relative paths resolve from the project root; must be an unencrypted RSA PEM key (checked at startup)</td></tr>
+<tr><td><code>ENABLE_BANKING_KEY_PATH</code></td><td>—</td><td>Private key file; relative paths resolve from the project root; must be an unencrypted RSA PEM key (read on the first bank request; a bad key fails bank requests as "bank unavailable", not the app's start)</td></tr>
 <tr><td><code>ENABLE_BANKING_SANDBOX_ID</code></td><td>—</td><td>Enable Banking application ID (sandbox)</td></tr>
 <tr><td><code>ENABLE_BANKING_SANDBOX_KEY_PATH</code></td><td>—</td><td>Sandbox private key file; same path rules</td></tr>
 </table>

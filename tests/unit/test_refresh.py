@@ -36,7 +36,7 @@ def test_refresh_stores_new_payments_and_the_rates_they_need(
     assert refreshed.rates.convert(Decimal("40"), "PLN", "EUR", today) == Decimal("10")
     assert refreshed.rates_error is None
     assert refreshed.bank_error is None
-    assert refreshed.connection_ends_on == service.connection_ends_on() is not None
+    assert not refreshed.needs_connection
 
 
 def test_bank_is_asked_again_only_after_the_refresh_window_unless_forced(
@@ -80,8 +80,8 @@ def test_without_a_connection_nothing_is_fetched(
     refreshed = refresher.refresh()
 
     assert refreshed.bank is BankStatus.NOT_CONNECTED
+    assert refreshed.needs_connection
     assert refreshed.payments == []
-    assert refreshed.connection_ends_on is None
 
 
 def test_expired_session_is_reported_and_forgotten(
@@ -93,7 +93,7 @@ def test_expired_session_is_reported_and_forgotten(
     refreshed = refresher.refresh()
 
     assert refreshed.bank is BankStatus.SESSION_EXPIRED
-    assert refreshed.connection_ends_on is None
+    assert refreshed.needs_connection
     assert refresher.refresh().bank is BankStatus.NOT_CONNECTED
 
 
@@ -114,7 +114,7 @@ def test_bank_outage_keeps_the_stored_payments_and_the_connection(
     assert refreshed.bank is BankStatus.BANK_UNAVAILABLE
     assert refreshed.bank_error
     assert [payment.amount for payment in refreshed.payments] == [Decimal("7")]
-    assert refreshed.connection_ends_on is not None
+    assert not refreshed.needs_connection
 
 
 def test_rates_outage_is_reported_and_keeps_the_payments(
