@@ -80,6 +80,28 @@ def test_payments_without_a_rate_are_left_out_with_a_warning(
     expect(dashboard.rates_warning).to_contain_text("1 payment is left out")
 
 
+def test_left_out_warning_counts_only_payments_in_the_shown_days(
+    open_dashboard: Callable[..., DashboardPage],
+) -> None:
+    """A payment left out ten days ago is no reason to warn about the last week."""
+    dashboard = open_dashboard(
+        "?period=week",
+        transactions=[
+            debit("30", TODAY, currency="PLN"),
+            debit("50", TODAY, currency="PLN"),
+            debit("10", TODAY - timedelta(days=10)),
+        ],
+        rates=daily(TODAY - timedelta(days=3), TODAY, PLN="4"),
+    )
+
+    expect(dashboard.total).to_have_text("80.00 PLN")
+    expect(dashboard.rates_warning).to_be_hidden()
+
+    dashboard.select_period("Last month")
+
+    expect(dashboard.rates_warning).to_contain_text("1 payment is left out")
+
+
 def test_rates_outage_warns_and_still_shows_spending(
     open_dashboard: Callable[..., DashboardPage],
 ) -> None:
@@ -97,6 +119,28 @@ def test_converted_totals_note_that_the_comparison_includes_exchange_rate_change
     expect(dashboard.total_note).to_have_text(
         "Converted at each day's rate, so the comparison includes exchange-rate changes."
     )
+
+
+def test_exchange_rate_note_shows_only_when_the_shown_days_include_converted_spending(
+    open_dashboard: Callable[..., DashboardPage],
+) -> None:
+    """A payment converted ten days ago does not touch the last week or its comparison."""
+    dashboard = open_dashboard(
+        "?period=week",
+        transactions=[
+            debit("80", TODAY, currency="PLN"),
+            debit("10", TODAY - timedelta(days=10)),
+        ],
+        rates=daily(TODAY - timedelta(days=20), TODAY, PLN="4"),
+    )
+
+    expect(dashboard.total).to_have_text("80.00 PLN")
+    expect(dashboard.total_note).to_be_hidden()
+
+    dashboard.select_period("Last month")
+
+    expect(dashboard.total).to_have_text("120.00 PLN")
+    expect(dashboard.total_note).to_be_visible()
 
 
 def test_totals_in_their_own_currency_carry_no_exchange_rate_note(

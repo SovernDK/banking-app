@@ -14,7 +14,7 @@ class KpiTile:
     """Big number over a muted label, a delta line and an optional note; `show` changes them
     in place."""
 
-    def __init__(self, *, testid: str, note: str | None = None) -> None:
+    def __init__(self, *, testid: str) -> None:
         with ui.column().classes("gap-1"):
             self._value = (
                 ui.label().classes("text-4xl font-normal").props(f'data-testid="{testid}"')
@@ -23,11 +23,14 @@ class KpiTile:
                 ui.label().classes("text-xs text-muted").props(f'data-testid="{testid}-label"')
             )
             self._delta = ui.label().classes("text-xs").props(f'data-testid="{testid}-delta"')
-            if note:
-                ui.label(note).classes("text-xs text-muted").props(f'data-testid="{testid}-note"')
+            self._note = (
+                ui.label().classes("text-xs text-muted").props(f'data-testid="{testid}-note"')
+            )
 
-    def show(self, value: str, label: str, delta: str, tone: Tone) -> None:
+    def show(self, value: str, label: str, delta: str, tone: Tone, note: str | None = None) -> None:
         self._value.set_text(value)
         self._label.set_text(label)
         self._delta.set_text(delta)
         self._delta.classes(replace=f"text-xs {_TONE_CLASSES[tone]}")
+        self._note.set_text(note or "")
+        self._note.set_visibility(note is not None)

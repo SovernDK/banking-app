@@ -20,6 +20,9 @@ class Period(StrEnum):
     def days(self) -> int:
         return _PERIOD_DAYS[self]
 
+    def first_day(self, last_day: date) -> date:
+        return last_day - timedelta(days=self.days - 1)
+
     @classmethod
     def parse(cls, value: str | None) -> "Period":
         try:
@@ -111,10 +114,22 @@ def _in_currency(payments: Iterable[Payment], currency: str) -> Iterator[Payment
     return (payment for payment in payments if payment.currency == currency)
 
 
+def booked_within(
+    payments: Iterable[Payment], period: Period, last_days: Iterable[date]
+) -> list[Payment]:
+    """The payments booked in `period` ending on any of `last_days`."""
+    windows = [(period.first_day(last_day), last_day) for last_day in last_days]
+    return [
+        payment
+        for payment in payments
+        if any(first_day <= payment.booked_on <= last_day for first_day, last_day in windows)
+    ]
+
+
 def _in_period(
     payments: list[Payment], currency: str, period: Period, today: date
 ) -> Iterator[Payment]:
-    first_day = today - timedelta(days=period.days - 1)
+    first_day = period.first_day(today)
     for payment in _in_currency(payments, currency):
         if first_day <= payment.booked_on <= today:
             yield payment
@@ -131,7 +146,7 @@ def _shares(payments: Iterable[Payment], key: Callable[[Payment], Key]) -> list[
 def daily_spending(
     payments: list[Payment], currency: str, period: Period, today: date
 ) -> list[DailySpending]:
-    first_day = today - timedelta(days=period.days - 1)
+    first_day = period.first_day(today)
     totals: dict[date, Decimal] = defaultdict(Decimal)
     for payment in _in_period(payments, currency, period, today):
         totals[payment.booked_on] += payment.amount

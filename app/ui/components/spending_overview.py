@@ -55,15 +55,12 @@ def _amounts(days: list[DailySpending]) -> list[float]:
 class SpendingOverview:
     """Period total and spending-per-day bars beside the compared days (hatched). `show` redraws
     them in place, and the chart box keeps its height when empty, so a redraw never moves the
-    page. `converted` says some amounts came from another currency at their own day's rate."""
+    page."""
 
-    def __init__(self, currency: str, language: Language, *, converted: bool, dark: bool) -> None:
+    def __init__(self, currency: str, language: Language, *, dark: bool) -> None:
         self._currency = currency
         self._language = language
-        self._total = KpiTile(
-            testid="total",
-            note=texts.CONVERTED_COMPARISON(language) if converted else None,
-        )
+        self._total = KpiTile(testid="total")
         with (
             section(texts.SPENDING_PER_DAY(language), currency) as self._title,
             ui.column().classes("w-full h-72 justify-center"),
@@ -81,11 +78,15 @@ class SpendingOverview:
         compared_days: list[DailySpending],
         label: str,
         comparison: Comparison,
+        *,
+        exchanged: bool,
     ) -> None:
+        """`exchanged` says some of the amounts came from another currency at their day's rate."""
         total = sum((entry.amount for entry in days), Decimal(0))
         previous = sum((entry.amount for entry in compared_days), Decimal(0))
         delta, tone = _delta(total, previous, self._currency, comparison, self._language)
-        self._total.show(fmt.money(total, self._currency), label, delta, tone)
+        note = texts.CONVERTED_COMPARISON(self._language) if exchanged else None
+        self._total.show(fmt.money(total, self._currency), label, delta, tone, note)
         ago = texts.COMPARISONS_AGO[comparison](self._language)
         self._title.set_text(texts.SPENDING_PER_DAY_VS(self._language, ago=ago))
         current, compared = self._chart.options["series"]

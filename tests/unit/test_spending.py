@@ -10,6 +10,7 @@ from app.spending import (
     Period,
     Share,
     all_time_spending_by,
+    booked_within,
     change,
     daily_spending,
     history_start,
@@ -91,6 +92,20 @@ def test_without_rates_for_every_payment_the_main_currency_has_the_most_payments
     ]
 
     assert main_currency(payments, RATES) == "PLN"
+
+
+def test_booked_within_keeps_payments_in_the_period_ending_on_any_given_day() -> None:
+    month_ago = Comparison.MONTH.shift(TODAY)
+    shown = [
+        payment("1", TODAY),
+        payment("2", date(2026, 11, 9)),
+        payment("3", month_ago),
+    ]
+    hidden = [payment("4", date(2026, 11, 8)), payment("5", date(2026, 10, 16))]
+
+    kept = booked_within([*shown, *hidden], Period.LAST_WEEK, [TODAY, month_ago])
+
+    assert kept == shown
 
 
 def test_only_sums_payments_in_the_requested_currency() -> None:

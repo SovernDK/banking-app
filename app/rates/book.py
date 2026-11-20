@@ -43,19 +43,31 @@ class ExchangeRates:
         return amount / source_rate * target_rate
 
 
+@dataclass(frozen=True)
+class Conversion:
+    """`payments` holds every payment with a rate, in one currency; `exchanged` those of them
+    booked in another currency; `left_out` the payments, as booked, that had no rate."""
+
+    payments: list[Payment]
+    exchanged: list[Payment]
+    left_out: list[Payment]
+
+
 def convert_payments(
     payments: Iterable[Payment], currency: str, rates: ExchangeRates
-) -> tuple[list[Payment], int]:
-    """The payments in `currency`, each at its booking day's rate, and how many had no rate."""
-    converted: list[Payment] = []
-    skipped = 0
+) -> Conversion:
+    """The payments in `currency`, each at its booking day's rate."""
+    conversion = Conversion(payments=[], exchanged=[], left_out=[])
     for payment in payments:
         amount = rates.convert(payment.amount, payment.currency, currency, payment.booked_on)
         if amount is None:
-            skipped += 1
-        else:
-            converted.append(payment.model_copy(update={"amount": amount, "currency": currency}))
-    return converted, skipped
+            conversion.left_out.append(payment)
+            continue
+        shown = payment.model_copy(update={"amount": amount, "currency": currency})
+        conversion.payments.append(shown)
+        if payment.currency != currency:
+            conversion.exchanged.append(shown)
+    return conversion
 
 
 @dataclass(frozen=True)

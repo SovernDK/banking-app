@@ -22,13 +22,14 @@ from app.categories import (
 from app.config import Settings, get_settings
 from app.i18n import Language
 from app.payments import Payment, counterparty_name, display_name
-from app.rates.book import convert_payments
+from app.rates.book import Conversion, convert_payments
 from app.rates.client import RatesUnavailableError
 from app.spending import (
     Comparison,
     Period,
     Share,
     all_time_spending_by,
+    booked_within,
     daily_spending,
     main_currency,
     merge_spellings,
@@ -123,9 +124,8 @@ def _currency_options(settings: Settings, payments: list[Payment]) -> list[str]:
 
 
 def _spending_view(
-    payments: list[Payment],
+    conversion: Conversion,
     currency: str,
-    converted: bool,
     currencies: list[str],
     default_currency: str,
     today: date,
@@ -141,6 +141,7 @@ def _spending_view(
 ) -> None:
     language = shell.language
     dark_mode = shell.dark_mode
+    payments = conversion.payments
     spending = {period: daily_spending(payments, currency, period, today) for period in Period}
     selected = initial
     comparison = initial_comparison
@@ -178,9 +179,25 @@ def _spending_view(
             return texts.SPENT_ON(language, subject=subject, period=period)
         return texts.SPENT(language, period=period)
 
+    def shown(candidates: list[Payment]) -> list[Payment]:
+        """The payments behind the total and its comparison."""
+        matching = (payment for payment in candidates if spending_filter.matches(payment, book))
+        return booked_within(matching, selected, [today, comparison.shift(today)])
+
+    def show_left_out() -> None:
+        left_out = len(shown(conversion.left_out))
+        left_out_notice.clear()
+        left_out_notice.set_visibility(left_out > 0)
+        if left_out:
+            with left_out_notice:
+                alert(
+                    texts.NOT_CONVERTED(language, left_out, currency=currency), testid="rates-error"
+                )
+
     spending_overview: SpendingOverview | None = None
 
     def show_overview() -> None:
+        show_left_out()
         if spending_overview is None:
             return
         matching = [payment for payment in payments if spending_filter.matches(payment, book)]
@@ -189,14 +206,13 @@ def _spending_view(
             daily_spending(matching, currency, selected, comparison.shift(today)),
             overview_label(),
             comparison,
+            exchanged=bool(shown(conversion.exchanged)),
         )
 
     @ui.refreshable
     def overview() -> None:
         nonlocal spending_overview
-        spending_overview = SpendingOverview(
-            currency, language, converted=converted, dark=bool(dark_mode.value)
-        )
+        spending_overview = SpendingOverview(currency, language, dark=bool(dark_mode.value))
         show_overview()
 
     def category_options() -> list[CategoryOption]:
@@ -389,6 +405,7 @@ def _spending_view(
         filters = SpendingFilters(
             counterparties, category_options(), spending_filter, choose, language
         )
+        left_out_notice = ui.column().classes("w-full")
         overview()
     breakdown()
 
@@ -474,20 +491,13 @@ def register() -> None:
                     return
                 currencies = _currency_options(settings, payments)
                 shown_currency = currency if currency in currencies else default_currency
-                converted, skipped = convert_payments(payments, shown_currency, rates)
-                if skipped:
-                    alert(
-                        texts.NOT_CONVERTED(language, skipped, currency=shown_currency),
-                        testid="rates-error",
-                    )
                 store = CategoryStore(
                     settings.data_dir / CATEGORIES_FILENAME, settings.starter_categories
                 )
                 book = await run.io_bound(store.load)
             _spending_view(
-                converted,
+                convert_payments(payments, shown_currency, rates),
                 shown_currency,
-                any(payment.currency != shown_currency for payment in payments),
                 currencies,
                 default_currency,
                 service.today(),

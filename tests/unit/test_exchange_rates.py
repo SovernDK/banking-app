@@ -16,8 +16,8 @@ SUNDAY = date(2026, 11, 15)
 
 
 def _in(currency: str, service: BankingService, *payments: Payment) -> list[Decimal]:
-    converted, _ = convert_payments(payments, currency, service.exchange_rates())
-    return [paid.amount for paid in converted]
+    conversion = convert_payments(payments, currency, service.exchange_rates())
+    return [paid.amount for paid in conversion.payments]
 
 
 def _ranges(fake_rates: FakeRatesState) -> list[str]:
@@ -68,10 +68,22 @@ def test_payment_without_a_rate_near_its_day_is_left_out_and_counted(
     stale, euro = payment("40", FRIDAY, currency="PLN"), payment("3", FRIDAY)
     service.refresh_rates([stale, euro])
 
-    converted, skipped = convert_payments([stale, euro], "EUR", service.exchange_rates())
+    conversion = convert_payments([stale, euro], "EUR", service.exchange_rates())
 
-    assert [paid.amount for paid in converted] == [Decimal("3")]
-    assert skipped == 1
+    assert [paid.amount for paid in conversion.payments] == [Decimal("3")]
+    assert conversion.left_out == [stale]
+
+
+def test_conversion_tells_which_payments_came_from_another_currency(
+    service: BankingService, fake_rates: FakeRatesState
+) -> None:
+    fake_rates.rates = {FRIDAY.isoformat(): {"PLN": "4.00"}}
+    zloty, euro = payment("40", FRIDAY, currency="PLN"), payment("3", FRIDAY)
+    service.refresh_rates([zloty, euro])
+
+    conversion = convert_payments([zloty, euro], "EUR", service.exchange_rates())
+
+    assert [paid.amount for paid in conversion.exchanged] == [Decimal("10")]
 
 
 def test_asks_for_the_payment_and_display_currencies_from_before_the_first_payment(
