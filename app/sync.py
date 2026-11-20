@@ -7,9 +7,8 @@ from enum import IntEnum
 
 from app.ai_categories.client import CategorisationUnavailableError
 from app.ai_categories.service import AutoCategoriser, find_auto_categoriser
-from app.banking.service import BankingService, find_banking_service
 from app.payments import Payment
-from app.refresh import BankStatus, refresh
+from app.refresh import BankStatus, Refresher, find_refresher
 
 logger = logging.getLogger("app.sync")
 
@@ -22,8 +21,8 @@ class SyncResult(IntEnum):
     NEEDS_RECONNECT = 2
 
 
-def sync(service: BankingService, auto_categoriser: AutoCategoriser | None = None) -> SyncResult:
-    refreshed = refresh(service, force=True)
+def sync(refresher: Refresher, auto_categoriser: AutoCategoriser | None = None) -> SyncResult:
+    refreshed = refresher.refresh(force=True)
     result = SyncResult.SYNCED
     if refreshed.bank in (BankStatus.NOT_CONNECTED, BankStatus.SESSION_EXPIRED):
         logger.error("Not synced: the bank connection is missing or expired; reconnect in Yiji.")
@@ -57,11 +56,11 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     # Request URLs carry account ids, which have no place in the system journal.
     logging.getLogger("httpx2").setLevel(logging.WARNING)
-    service = find_banking_service()
-    if service is None:
+    refresher = find_refresher()
+    if refresher is None:
         logger.error("Not synced: Enable Banking credentials are not configured.")
         return SyncResult.FAILED
-    return sync(service, find_auto_categoriser())
+    return sync(refresher, find_auto_categoriser())
 
 
 if __name__ == "__main__":

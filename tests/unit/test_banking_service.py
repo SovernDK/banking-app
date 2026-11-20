@@ -10,12 +10,14 @@ import pytest
 from pydantic import HttpUrl
 
 from app.banking.client import BankApiError, BankSessionExpiredError
+from app.banking.history import HistoryStore
 from app.banking.service import BankingService, InvalidStateError, NotConnectedError
 from app.banking.store import STORE_FILENAME, BankStore
 from app.categories import CategoryBook
 from app.config import Settings
 from app.payment_methods import PaymentMethod
 from app.payments import Payment
+from app.rates.book import ExchangeRates
 from app.spending_view import SpendingView
 from tests.fakes.enable_banking import FAKE_CODE, FakeBankState, debit
 from tests.unit.conftest import Clock
@@ -31,8 +33,8 @@ def _date_froms(fake_bank: FakeBankState) -> list[str]:
     ]
 
 
-def _amounts(service: BankingService) -> list[Decimal]:
-    return [payment.amount for payment in service.payments()]
+def _amounts(history: HistoryStore) -> list[Decimal]:
+    return [payment.amount for payment in history.payments()]
 
 
 def test_connect_state_carries_local_port_for_the_callback_relay(
@@ -54,13 +56,13 @@ def test_connect_state_carries_the_public_origin_when_yiji_runs_on_a_server(
 
 
 def test_completing_authorization_connects_and_survives_restart(
-    service: BankingService, connect: Connect, store: BankStore
+    history: HistoryStore, service: BankingService, connect: Connect, store: BankStore
 ) -> None:
     connect(service)
 
     assert store.load().session is not None
     service.refresh()
-    assert service.payments() == []
+    assert history.payments() == []
 
 
 def test_rejects_callback_whose_state_was_not_issued_by_this_app(service: BankingService) -> None:
@@ -95,7 +97,11 @@ def test_refresh_requires_a_connection(service: BankingService) -> None:
 
 
 def test_stores_booked_spending_only(
-    service: BankingService, connect: Connect, fake_bank: FakeBankState, clock: Clock
+    history: HistoryStore,
+    service: BankingService,
+    connect: Connect,
+    fake_bank: FakeBankState,
+    clock: Clock,
 ) -> None:
     today = clock().date()
     fake_bank.transactions = [
@@ -108,7 +114,7 @@ def test_stores_booked_spending_only(
 
     service.refresh()
 
-    assert service.payments() == [
+    assert history.payments() == [
         Payment(
             name="Card 1",
             payee="Biedronka",
@@ -146,7 +152,11 @@ def test_database_holds_no_bank_data_beyond_the_payment_fields(
 
 
 def test_bank_is_asked_again_only_after_the_refresh_window(
-    service: BankingService, connect: Connect, fake_bank: FakeBankState, clock: Clock
+    history: HistoryStore,
+    service: BankingService,
+    connect: Connect,
+    fake_bank: FakeBankState,
+    clock: Clock,
 ) -> None:
     connect(service)
     fake_bank.transactions = [debit("5", date(2026, 11, 14))]
@@ -155,11 +165,11 @@ def test_bank_is_asked_again_only_after_the_refresh_window(
     fake_bank.transactions = [debit("5", date(2026, 11, 14)), debit("7", date(2026, 11, 15))]
     clock.current += timedelta(minutes=59)
     service.refresh()
-    assert _amounts(service) == [Decimal("5")]
+    assert _amounts(history) == [Decimal("5")]
 
     clock.current += timedelta(minutes=2)
     service.refresh()
-    assert _amounts(service) == [Decimal("7"), Decimal("5")]
+    assert _amounts(history) == [Decimal("7"), Decimal("5")]
 
 
 def test_first_sync_fetches_history_for_the_longest_period_a_year_ago(
@@ -185,7 +195,11 @@ def test_later_syncs_fetch_from_the_last_sync_less_the_overlap(
 
 
 def test_payments_the_bank_stops_serving_stay_in_the_history(
-    service: BankingService, connect: Connect, fake_bank: FakeBankState, clock: Clock
+    history: HistoryStore,
+    service: BankingService,
+    connect: Connect,
+    fake_bank: FakeBankState,
+    clock: Clock,
 ) -> None:
     fake_bank.transactions = [debit("80", date(2026, 6, 1)), debit("5", date(2026, 11, 14))]
     connect(service)
@@ -196,11 +210,15 @@ def test_payments_the_bank_stops_serving_stay_in_the_history(
     fake_bank.transactions = [debit("9", date(2027, 6, 1))]
     service.refresh(force=True)
 
-    assert _amounts(service) == [Decimal("9"), Decimal("5"), Decimal("80")]
+    assert _amounts(history) == [Decimal("9"), Decimal("5"), Decimal("80")]
 
 
 def test_overlapping_syncs_do_not_duplicate_payments(
-    service: BankingService, connect: Connect, fake_bank: FakeBankState, clock: Clock
+    history: HistoryStore,
+    service: BankingService,
+    connect: Connect,
+    fake_bank: FakeBankState,
+    clock: Clock,
 ) -> None:
     fake_bank.transactions = [debit("5", date(2026, 11, 14)), debit("5", date(2026, 11, 14))]
     connect(service)
@@ -209,11 +227,15 @@ def test_overlapping_syncs_do_not_duplicate_payments(
     clock.current += timedelta(days=1)
     service.refresh(force=True)
 
-    assert _amounts(service) == [Decimal("5"), Decimal("5")]
+    assert _amounts(history) == [Decimal("5"), Decimal("5")]
 
 
 def test_a_payment_the_bank_drops_from_a_refetched_window_is_dropped(
-    service: BankingService, connect: Connect, fake_bank: FakeBankState, clock: Clock
+    history: HistoryStore,
+    service: BankingService,
+    connect: Connect,
+    fake_bank: FakeBankState,
+    clock: Clock,
 ) -> None:
     fake_bank.transactions = [debit("5", date(2026, 11, 14)), debit("6", date(2026, 11, 15))]
     connect(service)
@@ -222,11 +244,11 @@ def test_a_payment_the_bank_drops_from_a_refetched_window_is_dropped(
     fake_bank.transactions = [debit("5", date(2026, 11, 14))]
     service.refresh(force=True)
 
-    assert _amounts(service) == [Decimal("5")]
+    assert _amounts(history) == [Decimal("5")]
 
 
 def test_reconnecting_the_same_account_keeps_history_without_duplicates(
-    service: BankingService, connect: Connect, fake_bank: FakeBankState
+    history: HistoryStore, service: BankingService, connect: Connect, fake_bank: FakeBankState
 ) -> None:
     fake_bank.transactions = [debit("5", date(2026, 11, 14))]
     connect(service)
@@ -238,11 +260,11 @@ def test_reconnecting_the_same_account_keeps_history_without_duplicates(
     connect(service)
     service.refresh()
 
-    assert _amounts(service) == [Decimal("5")]
+    assert _amounts(history) == [Decimal("5")]
 
 
 def test_each_account_keeps_its_own_payments(
-    service: BankingService, connect: Connect, fake_bank: FakeBankState
+    history: HistoryStore, service: BankingService, connect: Connect, fake_bank: FakeBankState
 ) -> None:
     fake_bank.accounts = [{"uid": "current"}, {"uid": "savings"}]
     fake_bank.transactions = [debit("5", date(2026, 11, 14))]
@@ -250,11 +272,11 @@ def test_each_account_keeps_its_own_payments(
 
     service.refresh()
 
-    assert _amounts(service) == [Decimal("5"), Decimal("5")]
+    assert _amounts(history) == [Decimal("5"), Decimal("5")]
 
 
 def test_transfers_between_connected_accounts_are_not_spending(
-    service: BankingService, connect: Connect, fake_bank: FakeBankState
+    history: HistoryStore, service: BankingService, connect: Connect, fake_bank: FakeBankState
 ) -> None:
     fake_bank.accounts = [
         {"uid": "current", "account_id": {"iban": "PL61109010140000071219812874"}},
@@ -268,7 +290,7 @@ def test_transfers_between_connected_accounts_are_not_spending(
 
     service.refresh()
 
-    assert _amounts(service) == [Decimal("40"), Decimal("40")]
+    assert _amounts(history) == [Decimal("40"), Decimal("40")]
 
 
 def test_bank_store_keeps_no_account_numbers(
@@ -282,6 +304,7 @@ def test_bank_store_keeps_no_account_numbers(
 
 
 def test_store_written_before_payments_were_kept_syncs_the_full_history(
+    history: HistoryStore,
     service: BankingService,
     connect: Connect,
     fake_bank: FakeBankState,
@@ -298,7 +321,7 @@ def test_store_written_before_payments_were_kept_syncs_the_full_history(
 
     service.refresh()
 
-    assert _amounts(service) == [Decimal("5")]
+    assert _amounts(history) == [Decimal("5")]
 
 
 @pytest.mark.parametrize(
@@ -306,6 +329,7 @@ def test_store_written_before_payments_were_kept_syncs_the_full_history(
     [("2026-08-01", "2026-08-18"), ("2026-10-01", "2026-10-17")],
 )
 def test_bank_refusing_long_history_is_asked_for_shorter_ranges(
+    history: HistoryStore,
     service: BankingService,
     connect: Connect,
     fake_bank: FakeBankState,
@@ -318,12 +342,16 @@ def test_bank_refusing_long_history_is_asked_for_shorter_ranges(
 
     service.refresh()
 
-    assert _amounts(service) == [Decimal("5")]
+    assert _amounts(history) == [Decimal("5")]
     assert _date_froms(fake_bank)[-1] == served_from
 
 
 def test_expired_bank_session_disconnects_but_keeps_the_history(
-    service: BankingService, connect: Connect, fake_bank: FakeBankState, clock: Clock
+    history: HistoryStore,
+    service: BankingService,
+    connect: Connect,
+    fake_bank: FakeBankState,
+    clock: Clock,
 ) -> None:
     fake_bank.transactions = [debit("5", date(2026, 11, 14))]
     connect(service)
@@ -335,7 +363,7 @@ def test_expired_bank_session_disconnects_but_keeps_the_history(
         service.refresh()
     with pytest.raises(NotConnectedError):
         service.refresh()
-    assert _amounts(service) == [Decimal("5")]
+    assert _amounts(history) == [Decimal("5")]
 
 
 def test_bank_refusal_that_is_not_about_the_session_keeps_the_connection(
@@ -371,7 +399,7 @@ def test_corrupt_store_file_starts_disconnected(tmp_path: Path) -> None:
 
 
 def test_history_lists_the_newest_payments_first_so_their_spelling_names_ties(
-    service: BankingService, connect: Connect, fake_bank: FakeBankState
+    history: HistoryStore, service: BankingService, connect: Connect, fake_bank: FakeBankState
 ) -> None:
     fake_bank.transactions = [
         debit("15", date(2026, 11, 1), creditor="NETFLIX"),
@@ -381,8 +409,8 @@ def test_history_lists_the_newest_payments_first_so_their_spelling_names_ties(
     service.refresh()
 
     view = SpendingView(
-        service.payments(),
-        service.exchange_rates(),
+        history.payments(),
+        ExchangeRates({}, timedelta(days=7)),
         display_currencies=["EUR"],
         requested_currency=None,
         book=CategoryBook(),

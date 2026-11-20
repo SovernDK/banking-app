@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -20,6 +20,7 @@ from app.config import Settings
 from app.database import DATABASE_FILENAME
 from app.rates.book import RateBook
 from app.rates.client import ExchangeRateClient
+from app.refresh import Refresher
 from app.tls import generate_private_key, write_private_key
 from tests.fakes.enable_banking import FAKE_CODE, FakeBankState, create_fake_enable_banking
 from tests.fakes.exchange_rates import FakeRatesState, create_fake_exchange_rates
@@ -133,21 +134,43 @@ def settings() -> Settings:
 
 
 @pytest.fixture
+def history(database: Path) -> HistoryStore:
+    return HistoryStore(database)
+
+
+@pytest.fixture
 def service(
     bank_client: EnableBankingClient,
-    rate_client: ExchangeRateClient,
     store: BankStore,
-    database: Path,
+    history: HistoryStore,
     clock: Clock,
     settings: Settings,
 ) -> BankingService:
     return BankingService(
         client=bank_client,
         store=store,
-        history=HistoryStore(database),
-        rate_book=RateBook(database, rate_client, settings.exchange_rate_lookback_days),
+        history=history,
         profile=generic.to_payment,
         settings=settings,
+        now=clock,
+    )
+
+
+@pytest.fixture
+def refresher(
+    service: BankingService,
+    history: HistoryStore,
+    rate_client: ExchangeRateClient,
+    database: Path,
+    clock: Clock,
+    settings: Settings,
+) -> Refresher:
+    return Refresher(
+        service,
+        history,
+        RateBook(database, rate_client, settings.exchange_rate_lookback_days),
+        display_currencies=settings.display_currencies,
+        max_age=timedelta(minutes=settings.transactions_refresh_minutes),
         now=clock,
     )
 

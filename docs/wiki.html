@@ -40,14 +40,17 @@ flowchart LR
     C
     P
   end
-  N --> RF[refresh<br/>app/refresh.py<br/>bank + rates → Refreshed, no errors raised]
-  RF --> SV[BankingService<br/>app/banking/service.py]
+  N --> RF[Refresher<br/>app/refresh.py<br/>bank + rates → Refreshed, no errors raised]
+  RF --> SV[BankingService<br/>app/banking/service.py<br/>bank connection + history writes]
+  RF --> HS
+  RF --> RB[RateBook<br/>app/rates]
   R --> SV
   N --> D[SpendingView<br/>app/spending_view.py<br/>currency, conversion, overview, slices, URL]
   D --> CAT
   SV --> BP[bank_profiles/<br/>bank JSON → Payment]
   SV --> HS[(HistoryStore + RateBook<br/>.yiji/yiji.sqlite3)]
-  SV --> RC[ExchangeRateClient<br/>app/rates]
+  RB --> HS
+  RB --> RC[ExchangeRateClient<br/>app/rates]
   RC --> FR[(api.frankfurter.dev<br/>ECB daily rates)]
   SY[python -m app.sync<br/>systemd timer 00:00] --> RF
   BK[python -m app.backup<br/>after each sync] --> HS
@@ -233,7 +236,7 @@ flowchart LR
 sequenceDiagram
   Browser->>FastAPI: GET /
   FastAPI->>NiceGUI: @ui.page("/") dashboard_page
-  NiceGUI->>NiceGUI: refresh(service) → Refreshed (bank status, payments, rates, rates error, connection end) · _show_connection maps it to alerts / Connect / reconnect notice
+  NiceGUI->>NiceGUI: refresher.refresh() → Refreshed (bank status, payments, rates, rates error, connection end) · _show_connection maps it to alerts / Connect / reconnect notice
   NiceGUI->>NiceGUI: not configured → alert · not connected, no history → empty_state + Connect · not connected with history → Connect + history · otherwise → period_filter, comparison_filter, currency_filter, SpendingFilters, SpendingOverview, Donut ×2 + ⚙ SettingsDialog (CategoryList + CounterpartiesTable) · category edits update Donut, filters, overview, list and table in place (no re-render, no scroll jump)
   NiceGUI->>NiceGUI: connected, consent ends within YIJI_RECONNECT_WARNING_DAYS → "ends in N days" / "ends today" notice + Reconnect (count updated hourly in place)
   NiceGUI->>NiceGUI: session ended → stored session cleared, "expired" alert + Connect · other bank error → "unavailable" alert, session kept · both still show stored history
@@ -257,8 +260,8 @@ app/
   payments.py        Payment (the only bank data kept), counterparty_name, display_name
   database.py        yiji.sqlite3 schema + connect (WAL, busy timeout)
   rates/             Frankfurter client; RateBook (stored rates, missing-range fetch), ExchangeRates, convert_payments
-  refresh.py         refresh(service, force): bank + rates in one step, outcome as a Refreshed value; shared by the dashboard and the daily sync
-  sync.py            python -m app.sync: refresh(force=True) → exit code + log lines, then AI categories
+  refresh.py         Refresher.refresh(force): bank + rates in one step (works out which rates to fetch), outcome as a Refreshed value; shared by the dashboard and the daily sync
+  sync.py            python -m app.sync: refresher.refresh(force=True) → exit code + log lines, then AI categories
   backup.py          python -m app.backup: dated copy of history + categories, prunes old ones
   spending.py        Period, Comparison (M2M/Y2Y shift), history_start, change, DailySpending
   spending_view.py   SpendingView: everything the dashboard shows, from payments + rates + categories (pure, no I/O); ViewQuery, SpendingFilter

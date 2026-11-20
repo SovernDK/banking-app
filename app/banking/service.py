@@ -17,9 +17,6 @@ from app.banking.state import new_state, nonce_of
 from app.banking.store import STORE_FILENAME, BankStore, StoredSession, StoredState
 from app.config import MissingCredentialsError, Settings, get_settings
 from app.database import DATABASE_FILENAME
-from app.payments import Payment
-from app.rates.book import ExchangeRates, RateBook
-from app.rates.client import ExchangeRateClient
 from app.spending import LONGEST_PERIOD, history_start
 
 
@@ -31,7 +28,7 @@ class NotConnectedError(Exception):
     pass
 
 
-def _local_now() -> datetime:
+def local_now() -> datetime:
     return datetime.now().astimezone()
 
 
@@ -41,15 +38,13 @@ class BankingService:
         client: EnableBankingClient,
         store: BankStore,
         history: HistoryStore,
-        rate_book: RateBook,
         profile: BankProfile,
         settings: Settings,
-        now: Callable[[], datetime] = _local_now,
+        now: Callable[[], datetime] = local_now,
     ) -> None:
         self._client = client
         self._store = store
         self._history = history
-        self._rate_book = rate_book
         self._profile = profile
         self._settings = settings
         self._now = now
@@ -137,24 +132,6 @@ class BankingService:
         stored.synced_at = now
         self._store.save(stored)
 
-    def payments(self) -> list[Payment]:
-        return self._history.payments()
-
-    def refresh_rates(self, payments: list[Payment]) -> None:
-        """Fetches the exchange rates the payments and the display currencies still lack."""
-        if not payments:
-            return
-        self._rate_book.refresh(
-            {payment.currency for payment in payments} | set(self._settings.display_currencies),
-            min(payment.booked_on for payment in payments),
-            self.today(),
-            self._now(),
-            self._refresh_after,
-        )
-
-    def exchange_rates(self) -> ExchangeRates:
-        return self._rate_book.rates()
-
     def _fetch(self, account_uid: str, wanted_from: date) -> tuple[date, list[Transaction]]:
         """Transactions from `wanted_from`, or from as near it as the bank allows, and the day
         they start from. Banks cap how far back they go (often 90 days), so a refused range is
@@ -184,18 +161,11 @@ def _build_banking_service() -> BankingService:
         timeout=settings.enable_banking_timeout_seconds,
     )
     client = EnableBankingClient(http=http, app_id=app_id, key_path=key_path)
-    rates_http = httpx2.Client(
-        base_url=str(settings.exchange_rates_api_url),
-        timeout=settings.exchange_rates_timeout_seconds,
-    )
     database = settings.data_dir / DATABASE_FILENAME
     return BankingService(
         client=client,
         store=BankStore(settings.data_dir / STORE_FILENAME),
         history=HistoryStore(database),
-        rate_book=RateBook(
-            database, ExchangeRateClient(rates_http), settings.exchange_rate_lookback_days
-        ),
         profile=profile_for(
             settings.enable_banking_aspsp_name, settings.enable_banking_aspsp_country
         ),

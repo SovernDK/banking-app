@@ -19,7 +19,7 @@ from app.categories import (
 )
 from app.config import get_settings
 from app.i18n import Language
-from app.refresh import BankStatus, Refreshed, refresh
+from app.refresh import BankStatus, Refreshed, find_refresher
 from app.spending import Comparison, Period
 from app.spending_view import (
     UNCATEGORISED,
@@ -372,12 +372,13 @@ def register() -> None:
                     )
                     if settings.enable_banking_environment == "sandbox":
                         chip("science", texts.SANDBOX(language))
-                if service is None:
+                refresher = find_refresher()
+                if service is None or refresher is None:
                     alert(texts.BANK_ERRORS[BankErrorCode.NOT_CONFIGURED](language))
                     return
                 if error:
                     alert(texts.BANK_ERRORS[error](language))
-                refreshed = await run.io_bound(refresh, service)
+                refreshed = await run.io_bound(refresher.refresh)
                 needs_connection = _show_connection(
                     refreshed, service, settings.reconnect_warning_days, language
                 )
