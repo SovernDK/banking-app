@@ -462,16 +462,16 @@ def register() -> None:
                 if error:
                     alert(texts.BANK_ERRORS[error](language))
                 payments, needs_connection = await _payments_or_connect(service, language)
-                default_currency = main_currency(payments)
-                if default_currency is None:
-                    if not needs_connection:
-                        empty_state(texts.NO_RECENT_SPENDING(language))
-                    return
                 try:
                     await run.io_bound(service.refresh_rates, payments)
                 except RatesUnavailableError:
                     alert(texts.RATES_UNAVAILABLE(language), testid="rates-error")
                 rates = await run.io_bound(service.exchange_rates)
+                default_currency = main_currency(payments, rates)
+                if default_currency is None:
+                    if not needs_connection:
+                        empty_state(texts.NO_RECENT_SPENDING(language))
+                    return
                 currencies = _currency_options(settings, payments)
                 shown_currency = currency if currency in currencies else default_currency
                 converted, skipped = convert_payments(payments, shown_currency, rates)

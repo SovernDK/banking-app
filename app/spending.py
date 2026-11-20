@@ -8,6 +8,8 @@ from enum import StrEnum
 from typing import Generic, TypeVar
 
 from app.payments import Payment
+from app.rates.book import ExchangeRates
+from app.rates.client import EURO
 
 
 class Period(StrEnum):
@@ -79,11 +81,24 @@ class DailySpending:
     amount: Decimal
 
 
-def main_currency(payments: list[Payment]) -> str | None:
-    totals: dict[str, Decimal] = defaultdict(Decimal)
+def main_currency(payments: list[Payment], rates: ExchangeRates) -> str | None:
+    """The currency with the most spending, valued in euros at each payment's rate. Amounts in
+    different currencies can't be compared without rates, so when any payment lacks one the
+    currency with the most payments wins, the bigger amount breaking a tie."""
+    values: dict[str, Decimal] = defaultdict(Decimal)
+    counts: dict[str, tuple[int, Decimal]] = defaultdict(lambda: (0, Decimal(0)))
+    comparable = True
     for payment in payments:
-        totals[payment.currency] += payment.amount
-    return max(totals, key=totals.__getitem__, default=None)
+        count, amount = counts[payment.currency]
+        counts[payment.currency] = (count + 1, amount + payment.amount)
+        value = rates.convert(payment.amount, payment.currency, EURO, payment.booked_on)
+        if value is None:
+            comparable = False
+        else:
+            values[payment.currency] += value
+    if comparable:
+        return max(values, key=values.__getitem__, default=None)
+    return max(counts, key=counts.__getitem__)
 
 
 @dataclass(frozen=True)

@@ -1,8 +1,9 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
 
+from app.rates.book import ExchangeRates
 from app.spending import (
     Comparison,
     DailySpending,
@@ -66,14 +67,30 @@ def test_period_parses_from_url_value_and_defaults_to_last_month() -> None:
     assert Period.parse(None) is Period.LAST_MONTH
 
 
-def test_spending_currency_is_the_one_with_the_largest_spending() -> None:
+RATES = ExchangeRates(
+    {"PLN": [(TODAY, Decimal("4"))], "JPY": [(TODAY, Decimal("160"))]}, timedelta(days=7)
+)
+
+
+def test_main_currency_is_the_one_with_the_most_spending_in_value() -> None:
+    """5000 JPY is worth less than 100 EUR, though the number is bigger."""
     payments = [
-        payment("10", TODAY, currency="EUR"),
-        payment("50", TODAY, currency="PLN"),
+        payment("100", TODAY, currency="EUR"),
+        payment("5000", TODAY, currency="JPY"),
     ]
 
-    assert main_currency(payments) == "PLN"
-    assert main_currency([]) is None
+    assert main_currency(payments, RATES) == "EUR"
+    assert main_currency([], RATES) is None
+
+
+def test_without_rates_for_every_payment_the_main_currency_has_the_most_payments() -> None:
+    payments = [
+        payment("10", TODAY, currency="PLN"),
+        payment("20", TODAY, currency="PLN"),
+        payment("50000", TODAY, currency="HUF"),
+    ]
+
+    assert main_currency(payments, RATES) == "PLN"
 
 
 def test_only_sums_payments_in_the_requested_currency() -> None:

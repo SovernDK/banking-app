@@ -16,7 +16,7 @@ _Avoid_: Transaction (that is the bank's full record)
 Every payment ever fetched, kept after the bank stops serving it (banks give only 3–13 months). Each fetch replaces the account's payments from the first day it covered.
 
 **Main currency**:
-The currency with the most spending; the default display currency.
+The currency with the most spending, valued at each payment's exchange rate; the default display currency. When some payment has no exchange rate, values can't be compared, so it is the currency with the most payments.
 
 **Display currency**:
 The currency every chart shows; chosen by the person, payments in other currencies are converted into it.
