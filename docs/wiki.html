@@ -102,10 +102,10 @@ sequenceDiagram
 <pre class="mermaid">
 flowchart LR
   T[Payments in period<br/>chosen currency] --> CN["Counterparty name<br/>payee, else name"]
-  CN -->|named| PY["Counterparty donut key<br/>spellings differing in case merged"]
+  CN -->|named| PY["Counterparties.label<br/>case/space variants → spelling on most payments"]
   CN -->|nameless| PM["stored payment method<br/>e.g. ATM withdrawal"] --> PY
   PY --> PD((Counterparties donut))
-  CN --> RU{Category rule?<br/>case/space-insensitive}
+  CN --> RU{Category rule?<br/>by counterparty_key}
   RU -->|yes| CD((Categories donut))
   RU -->|no| UC[Uncategorised] --> CD
   subgraph SD[Settings modal · ⚙ in header · boxes start collapsed]
@@ -200,7 +200,7 @@ flowchart LR
   ED[Settings category edit] -->|"revalidate: deleted → All"| F
 </pre>
 <ul>
-<li>Counterparty matching uses the Counterparties donut's names (case-insensitive, nameless → payment method); category matching uses the category rules. The donuts ignore the filter.</li>
+<li>Counterparty matching uses the Counterparties donut's names (case/space-insensitive via <code>counterparty_key</code>, nameless → payment method); category matching uses the category rules. The donuts ignore the filter.</li>
 <li>Total label: "Spent on &lt;name&gt;, last month"; under it "▲ +12.0% vs 100.00 EUR a month ago" (more spending = loss colour, less = gain, no history = muted, no %). The filter narrows both periods. Nothing in range → "No spending in this period." with the filter kept.</li>
 <li>Logic: <code>app/spending_view.py</code> (pure; <code>parse</code> / <code>url</code> / <code>checked</code> for the URL and stale filters). UI: <code>SpendingFilters</code> + <code>SpendingOverview</code>, both updated in place.</li>
 <li>Layout: toggles (period · compare · currency) on the first row; Counterparty · Category · Clear filters on a row of their own below, never wrapping. The selects grow to at most 224px and shrink when space is short; on phones Clear filters shows only its icon.</li>
@@ -261,6 +261,7 @@ app/
   spending_view.py   SpendingView: everything the dashboard shows, from payments + rates + categories (pure, no I/O); ViewQuery, SpendingFilter
   payment_methods.py PaymentMethod enum
   bank_profiles/     Per-bank mapping of transaction JSON → Payment: generic (ISO codes), mock_aspsp, pekao; profile_for()
+  counterparties.py  counterparty_key (the one sameness rule) + Counterparties.label (one spelling per name, used by the view, settings and AI samples)
   categories.py      Category, CategoryBook (rules by counterparty name, AI-assigned marks), CategoryStore (load/save/update)
   ai_categories/     OllamaCategoriser (chat API, answers by id), AutoCategoriser (batches, saves), find_auto_categoriser
   json_file.py       Atomic JSON write shared by the stores

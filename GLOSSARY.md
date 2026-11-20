@@ -56,7 +56,7 @@ What the money was spent on (Groceries, Rent, …), created and named by the per
 _Avoid_: Tag, label, type
 
 **Counterparty name**:
-Who the money went to: the payment's payee, or its name when there is no payee. Two names are the same when they differ only in letter case or spacing.
+Who the money went to: the payment's payee, or its name when there is no payee. Two names are the same when they differ only in letter case or spacing. Two spellings of the same name show as the one used on the most payments.
 _Avoid_: Merchant, payee
 
 Spending with no counterparty name (a cash withdrawal, say) goes by its payment method in the Counterparties donut.

@@ -57,6 +57,29 @@ def test_model_fills_in_uncategorised_counterparties_following_the_users_choices
     ]
 
 
+def test_spellings_of_a_name_are_asked_about_once(
+    auto_categoriser: AutoCategoriser,
+    category_store: CategoryStore,
+    fake_ollama: FakeOllamaState,
+) -> None:
+    fake_ollama.categories = {"Netflix": "Entertainment"}
+
+    assigned = auto_categoriser.run(
+        [
+            payment("5", DAY, payee="NETFLIX", name="Plan 1"),
+            payment("5", DAY, payee="Netflix", name="Plan 2"),
+            payment("5", date(2026, 11, 1), payee="Netflix", name="Plan 1"),
+        ]
+    )
+
+    assert assigned == 1
+    [question] = fake_ollama.questions()
+    assert [(item["name"], item["payment_titles"]) for item in question["counterparties"]] == [
+        ("Netflix", ["Plan 1", "Plan 2"])
+    ]
+    assert category_store.load().category_of("NETFLIX") is not None
+
+
 def test_counterparties_are_asked_about_in_batches(
     auto_categoriser: AutoCategoriser,
     category_store: CategoryStore,

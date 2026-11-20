@@ -64,6 +64,17 @@ def test_counterparties_box_lists_names_outside_the_selected_period(
     expect(dashboard.category_select("Landlord")).to_be_visible()
 
 
+def test_spellings_of_one_name_share_one_counterparty_row(dashboard: DashboardPage) -> None:
+    _open_counterparties(dashboard)
+
+    expect(dashboard.counterparties.get_by_role("listitem")).to_have_count(2)
+    expect(
+        dashboard.counterparties.get_by_role("listitem").filter(
+            has=dashboard.category_select("Biedronka")
+        )
+    ).to_contain_text("42.00 EUR")
+
+
 def test_assigning_a_category_covers_every_payment_to_that_name(dashboard: DashboardPage) -> None:
     _open_counterparties(dashboard)
 

@@ -1,11 +1,13 @@
 import functools
 from collections.abc import Sequence
+from dataclasses import replace
 
 import httpx2
 
 from app.ai_categories.client import CounterpartySample, OllamaCategoriser
 from app.categories import CATEGORIES_FILENAME, CategoryBook, CategoryStore
 from app.config import Settings, get_settings
+from app.counterparties import Counterparties, counterparty_key
 from app.payments import Payment, counterparty_name
 
 
@@ -13,20 +15,23 @@ def uncategorised_samples(
     book: CategoryBook, payments: Sequence[Payment], titles_per_name: int
 ) -> list[CounterpartySample]:
     """Each counterparty without a category, with a few of its distinct payment titles."""
-    titles: dict[str, list[str]] = {}
-    first_payments: dict[str, Payment] = {}
+    names = Counterparties(payments)
+    samples: dict[str, CounterpartySample] = {}
     for payment in payments:
         name = counterparty_name(payment)
         if name is None or book.category_of(name) is not None:
             continue
-        name_titles = titles.setdefault(name, [])
-        first_payments.setdefault(name, payment)
-        if payment.name and payment.name not in name_titles and len(name_titles) < titles_per_name:
-            name_titles.append(payment.name)
-    return [
-        CounterpartySample(name, tuple(titles[name]), first_payments[name].payment_method)
-        for name in titles
-    ]
+        key = counterparty_key(name)
+        sample = samples.setdefault(
+            key, CounterpartySample(names.label(name), (), payment.payment_method)
+        )
+        if (
+            payment.name
+            and payment.name not in sample.titles
+            and len(sample.titles) < titles_per_name
+        ):
+            samples[key] = replace(sample, titles=(*sample.titles, payment.name))
+    return list(samples.values())
 
 
 def _chosen_by_user(book: CategoryBook, limit: int) -> dict[str, str]:

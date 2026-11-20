@@ -9,6 +9,7 @@ from typing import Generic, TypeVar
 from urllib.parse import urlencode
 
 from app.categories import CategoryBook
+from app.counterparties import Counterparties, counterparty_key
 from app.payments import Payment, counterparty_name, display_name
 from app.rates.book import ExchangeRates, convert_payments
 from app.rates.client import EURO
@@ -114,9 +115,8 @@ class SpendingView:
         conversion = convert_payments(payments, self.currency, rates)
         self.payments = conversion.payments
         """Every payment with a rate, in the display currency."""
-        self.counterparties = [
-            share.key for share in _merge_spellings(_shares(self.payments, display_name))
-        ]
+        self._names = Counterparties(payments)
+        self.counterparties = [share.key for share in _shares(self.payments, self._label)]
         """Every name spending went to, case variants merged, biggest all-time spending first."""
         self._exchanged = conversion.exchanged
         self._left_out = conversion.left_out
@@ -186,7 +186,7 @@ class SpendingView:
         in_period = _booked_within(self.payments, period, [self._today])
         if not in_period:
             return None
-        counterparties = _merge_spellings(_shares(in_period, display_name))
+        counterparties = _shares(in_period, self._label)
         kept, rest = _top_shares(counterparties, self._slice_limit)
         counterparty_slices = [
             Slice(SliceKind.NAMED, share.amount, name=share.key, colour_slot=rank)
@@ -205,7 +205,7 @@ class SpendingView:
                 category_id=self._category_id(share.key),
                 ai_assigned=self._book.is_ai_assigned(share.key),
             )
-            for share in _shares(self.payments, counterparty_name)
+            for share in _shares(self.payments, self._named_label)
             if share.key is not None
         ]
 
@@ -234,6 +234,13 @@ class SpendingView:
             slices.append(Slice(SliceKind.UNCATEGORISED, uncategorised))
         return slices
 
+    def _label(self, payment: Payment) -> str:
+        return self._names.label(display_name(payment))
+
+    def _named_label(self, payment: Payment) -> str | None:
+        name = counterparty_name(payment)
+        return self._names.label(name) if name else None
+
     def _category_id(self, counterparty: str | None) -> str | None:
         category = self._book.category_of(counterparty)
         return category.id if category else None
@@ -243,8 +250,10 @@ class SpendingView:
         if counterparty and category:
             return ALL
         if counterparty:
-            wanted = counterparty.casefold()
-            known = next((name for name in self.counterparties if name.casefold() == wanted), None)
+            wanted = counterparty_key(counterparty)
+            known = next(
+                (name for name in self.counterparties if counterparty_key(name) == wanted), None
+            )
             return SpendingFilter(counterparty=known) if known else ALL
         if category == UNCATEGORISED or (category and self._book.get(category)):
             return SpendingFilter(category_id=category)
@@ -252,7 +261,8 @@ class SpendingView:
 
     def _matches(self, payment: Payment, spending_filter: SpendingFilter) -> bool:
         if spending_filter.counterparty:
-            return display_name(payment).casefold() == spending_filter.counterparty.casefold()
+            wanted = counterparty_key(spending_filter.counterparty)
+            return counterparty_key(display_name(payment)) == wanted
         if spending_filter.category_id:
             category_id = self._category_id(counterparty_name(payment))
             return (category_id or UNCATEGORISED) == spending_filter.category_id
@@ -337,18 +347,3 @@ def _top_shares(shares: list[Share[Key]], limit: int) -> tuple[list[Share[Key]],
         return shares, Decimal(0)
     kept = shares[: limit - 1]
     return kept, sum((share.amount for share in shares[limit - 1 :]), Decimal(0))
-
-
-def _merge_spellings(shares: list[Share[str]]) -> list[Share[str]]:
-    """Joins names that differ only in case, labelled by the spelling with the most spending."""
-    spellings: dict[str, list[Share[str]]] = defaultdict(list)
-    for share in shares:
-        spellings[share.key.casefold()].append(share)
-    merged = [
-        Share(
-            key=max(group, key=lambda share: share.amount).key,
-            amount=sum((share.amount for share in group), Decimal(0)),
-        )
-        for group in spellings.values()
-    ]
-    return sorted(merged, key=lambda share: share.amount, reverse=True)

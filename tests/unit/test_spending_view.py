@@ -380,6 +380,27 @@ def test_category_slices_keep_a_place_for_uncategorised_spending() -> None:
     ]
 
 
+def test_spellings_of_a_name_are_one_counterparty_shown_by_its_most_used_spelling() -> None:
+    """NETFLIX and Netflix showed as two settings rows sharing one category rule."""
+    a_month_ago = TODAY - timedelta(days=40)
+    view = _view(
+        [
+            _paid("20", payee="NETFLIX"),
+            _paid("5", a_month_ago, payee="Netflix"),
+            _paid("5", a_month_ago, payee=" netflix "),
+            _paid("5", a_month_ago, payee="Netflix"),
+        ]
+    )
+
+    breakdown = view.breakdown(Period.LAST_WEEK)
+
+    assert view.counterparties == ["Netflix"]
+    assert breakdown is not None
+    assert [part.name for part in breakdown.counterparties] == ["Netflix"]
+    assert view.counterparty_totals() == [CounterpartyTotal("Netflix", Decimal("35"), None)]
+    assert view.parse(counterparty="NETFLIX").spending_filter.counterparty == "Netflix"
+
+
 def test_counterparty_totals_cover_all_time_spending_with_categories() -> None:
     book, groceries = _book_with_groceries()
     fuel = book.create("Fuel")
