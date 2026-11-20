@@ -82,6 +82,15 @@ def _choose_language(event: ValueChangeEventArguments) -> None:
     ui.navigate.reload()
 
 
+_DARK_MODE_KEY = "dark_mode"
+
+
+def _remember_dark_mode(event: ValueChangeEventArguments) -> None:
+    # Kept per browser like the language, so a page that is made again (currency change,
+    # reconnect) stays in the viewer's theme.
+    app.storage.user[_DARK_MODE_KEY] = bool(event.value)
+
+
 def _language_picker(language: Language) -> ui.select:
     picker = (
         ui.select(
@@ -98,11 +107,15 @@ def _language_picker(language: Language) -> ui.select:
 
 @contextmanager
 def page_shell(title: str, default_language: Language) -> Iterator[PageShell]:
-    """The viewer's language is kept per browser and falls back to `default_language`."""
+    """The viewer's language and theme are kept per browser; the language falls back to
+    `default_language`."""
     ui.add_css(THEME_CSS)
     language = _viewer_language(default_language)
     ui.query("html").props(f"lang={language.value}")
-    dark_mode = ui.dark_mode()
+    dark_mode = ui.dark_mode(
+        value=app.storage.user.get(_DARK_MODE_KEY, False),
+        on_change=_remember_dark_mode,
+    )
     with ui.header().classes("yiji-top-bar items-center justify-between px-6 py-3"):
         ui.label(title).classes("text-lg font-semibold")
         with ui.row().classes("items-center gap-1"):

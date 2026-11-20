@@ -218,6 +218,7 @@ flowchart LR
 <ul>
 <li>Add a string: one constant in <code>app/texts.py</code> with all three languages (missing one = type error). Domain enums (Period, Comparison, BankErrorCode) carry no text; <code>texts.PERIODS</code>, <code>COMPARISONS</code>, <code>BANK_ERRORS</code> map them.</li>
 <li><code>tests/unit/test_i18n.py</code> checks every text is filled in and uses the same <code>{fields}</code> in each language.</li>
+<li>Dark mode is kept the same way (<code>app.storage.user["dark_mode"]</code>), so a rebuilt page (currency change, language change, reconnect) keeps the viewer's theme.</li>
 <li>Not translated: user data (category and bank names, incl. seeded starter categories), money/date formats, Quasar/ECharts built-in labels.</li>
 </ul>
 </section>
