@@ -101,6 +101,15 @@ class CategoryBook(BaseModel):
         self.rules[key] = category_id
         self._give_colour(category)
 
+    def assign_choice(self, counterparty: str, choice: str | None) -> None:
+        """Assigns what the person picked: a category id, the name of an existing category, or
+        a new name, which creates the category; None makes the name uncategorised."""
+        if choice is None or self.get(choice):
+            self.assign(counterparty, choice)
+            return
+        existing = self.find_by_name(choice)
+        self.assign(counterparty, (existing or self.create(choice)).id)
+
     def assign_suggested(self, counterparty: str, category_id: str) -> bool:
         """Applies an AI model's choice unless the name already has a category; tells whether
         it did."""

@@ -277,16 +277,8 @@ def _spending_view(
         if value == assigned_category(counterparty):
             return
 
-        def assign(fresh: CategoryBook) -> None:
-            if value is None or fresh.get(value):
-                category_id = value
-            else:
-                existing = fresh.find_by_name(value)
-                category_id = existing.id if existing else fresh.create(value).id
-            fresh.assign(counterparty, category_id)
-
         try:
-            await change_and_show(assign)
+            await change_and_show(lambda fresh: fresh.assign_choice(counterparty, value))
         except InvalidCategoryNameError:
             ui.notify(texts.CATEGORY_NAME_LENGTH(language), type="negative")
             show_categories()

@@ -32,6 +32,40 @@ def test_assigning_none_makes_the_name_uncategorised() -> None:
     assert book.category_of("Biedronka") is None
 
 
+def test_choice_picks_a_category_by_id_or_by_name_and_creates_a_new_name() -> None:
+    book = CategoryBook()
+    groceries = book.create("Groceries")
+
+    book.assign_choice("Biedronka", groceries.id)
+    book.assign_choice("Lidl", " GROCERIES ")
+    book.assign_choice("Orlen", "Fuel")
+
+    assert book.category_of("Biedronka") == groceries
+    assert book.category_of("Lidl") == groceries
+    fuel = book.category_of("Orlen")
+    assert fuel is not None and fuel.name == "Fuel"
+    assert len(book.categories) == 2
+
+
+def test_choosing_nothing_makes_the_name_uncategorised() -> None:
+    book = CategoryBook()
+    book.assign_choice("Biedronka", "Groceries")
+
+    book.assign_choice("Biedronka", None)
+
+    assert book.category_of("Biedronka") is None
+
+
+def test_choice_of_a_new_name_too_long_creates_nothing() -> None:
+    book = CategoryBook()
+
+    with pytest.raises(InvalidCategoryNameError):
+        book.assign_choice("Biedronka", "x" * 41)
+
+    assert book.categories == []
+    assert book.category_of("Biedronka") is None
+
+
 @pytest.mark.parametrize("name", ["", "   ", "x" * 41])
 def test_rejects_category_name_that_is_blank_or_too_long(name: str) -> None:
     with pytest.raises(InvalidCategoryNameError):
