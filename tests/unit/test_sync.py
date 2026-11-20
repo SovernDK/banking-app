@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
@@ -6,8 +7,10 @@ from app.ai_categories.service import AutoCategoriser
 from app.banking.history import HistoryStore
 from app.banking.service import BankingService
 from app.categories import CategoryStore
+from app.config import Settings
+from app.modules import build_modules
 from app.refresh import Refresher
-from app.sync import SyncResult, main, sync
+from app.sync import SyncResult, run, sync
 from tests.fakes.enable_banking import FakeBankState, debit
 from tests.fakes.exchange_rates import FakeRatesState
 from tests.fakes.ollama import FakeOllamaState
@@ -100,7 +103,7 @@ def test_model_outage_leaves_payments_uncategorised_but_the_sync_succeeds(
     assert len(history.payments()) == 1
 
 
-def test_sync_without_bank_credentials_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.sync.find_refresher", lambda: None)
+def test_sync_without_bank_credentials_fails(settings: Settings, tmp_path: Path) -> None:
+    modules = build_modules(settings.model_copy(update={"data_dir": tmp_path}))
 
-    assert main() == SyncResult.FAILED
+    assert run(modules) is SyncResult.FAILED

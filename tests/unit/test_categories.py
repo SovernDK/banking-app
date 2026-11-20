@@ -3,12 +3,12 @@ from pathlib import Path
 import pytest
 
 from app.categories import (
-    CATEGORIES_FILENAME,
     CategoryBook,
     CategoryStore,
     DuplicateCategoryError,
     InvalidCategoryNameError,
 )
+from app.modules import DataFiles
 
 
 def test_rule_applies_to_names_differing_only_in_case_and_spacing() -> None:
@@ -149,7 +149,7 @@ def test_colour_freed_by_a_deleted_category_is_reused() -> None:
 
 
 def test_store_seeds_starter_categories_once_and_keeps_changes(tmp_path: Path) -> None:
-    path = tmp_path / CATEGORIES_FILENAME
+    path = DataFiles.under(tmp_path).categories
     store = CategoryStore(path, ["Groceries", "Rent"])
     book = store.load()
     assert [category.name for category in book.categories] == ["Groceries", "Rent"]
@@ -164,7 +164,7 @@ def test_store_seeds_starter_categories_once_and_keeps_changes(tmp_path: Path) -
 
 
 def test_unreadable_category_file_starts_empty(tmp_path: Path) -> None:
-    path = tmp_path / CATEGORIES_FILENAME
+    path = DataFiles.under(tmp_path).categories
     path.write_text("{not json")
 
     assert CategoryStore(path, ["Groceries"]).load() == CategoryBook()
@@ -209,7 +209,7 @@ def test_deleting_a_category_forgets_its_ai_choices() -> None:
 
 
 def test_category_file_from_before_ai_choices_still_loads(tmp_path: Path) -> None:
-    path = tmp_path / CATEGORIES_FILENAME
+    path = DataFiles.under(tmp_path).categories
     path.write_text(
         '{"categories": [{"id": "g", "name": "Groceries", "colour_slot": 0}],'
         ' "rules": {"biedronka": "g"}}'
@@ -222,7 +222,7 @@ def test_category_file_from_before_ai_choices_still_loads(tmp_path: Path) -> Non
 
 
 def test_store_update_starts_from_the_saved_book_and_keeps_both_changes(tmp_path: Path) -> None:
-    store = CategoryStore(tmp_path / CATEGORIES_FILENAME, ["Groceries"])
+    store = CategoryStore(DataFiles.under(tmp_path).categories, ["Groceries"])
     stale = store.load()
     groceries_id = stale.categories[0].id
     store.update(lambda book: book.assign_suggested("Żabka", groceries_id))

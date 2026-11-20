@@ -5,8 +5,8 @@ from dataclasses import replace
 import httpx2
 
 from app.ai_categories.client import CounterpartySample, OllamaCategoriser
-from app.categories import CATEGORIES_FILENAME, CategoryBook, CategoryStore
-from app.config import Settings, get_settings
+from app.categories import CategoryBook, CategoryStore
+from app.config import Settings
 from app.counterparties import Counterparties, counterparty_key
 from app.payments import Payment, counterparty_name
 
@@ -92,7 +92,7 @@ class AutoCategoriser:
         return assigned
 
 
-def build_auto_categoriser(settings: Settings) -> AutoCategoriser | None:
+def build_auto_categoriser(settings: Settings, store: CategoryStore) -> AutoCategoriser | None:
     """None when no Ollama key is configured: categories are then assigned only by hand."""
     if settings.ollama_api_key is None:
         return None
@@ -103,13 +103,8 @@ def build_auto_categoriser(settings: Settings) -> AutoCategoriser | None:
     )
     return AutoCategoriser(
         OllamaCategoriser(http, settings.ai_category_model, settings.ai_category_thinking),
-        CategoryStore(settings.data_dir / CATEGORIES_FILENAME, settings.starter_categories),
+        store,
         batch_size=settings.ai_category_batch_size,
         max_examples=settings.ai_category_examples,
         titles_per_name=settings.ai_category_titles_per_name,
     )
-
-
-@functools.lru_cache
-def find_auto_categoriser() -> AutoCategoriser | None:
-    return build_auto_categoriser(get_settings())

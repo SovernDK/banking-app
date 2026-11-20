@@ -12,9 +12,10 @@ from pydantic import HttpUrl
 from app.banking.client import BankApiError, BankSessionExpiredError
 from app.banking.history import HistoryStore
 from app.banking.service import BankingService, InvalidStateError, NotConnectedError
-from app.banking.store import STORE_FILENAME, BankStore
+from app.banking.store import BankStore
 from app.categories import CategoryBook
 from app.config import Settings
+from app.modules import DataFiles
 from app.payment_methods import PaymentMethod
 from app.payments import Payment
 from app.rates.book import ExchangeRates
@@ -300,7 +301,7 @@ def test_bank_store_keeps_no_account_numbers(
     fake_bank.accounts = [{"uid": "current", "account_id": {"iban": iban}}]
     connect(service)
 
-    assert iban not in (tmp_path / STORE_FILENAME).read_text()
+    assert iban not in (DataFiles.under(tmp_path).bank).read_text()
 
 
 def test_store_written_before_payments_were_kept_syncs_the_full_history(
@@ -316,7 +317,7 @@ def test_store_written_before_payments_were_kept_syncs_the_full_history(
     connect(service)
     legacy = store.load().model_dump(mode="json", exclude={"synced_at"})
     legacy |= {"fetched_at": clock().isoformat(), "transactions": [], "cache_version": 2}
-    (tmp_path / STORE_FILENAME).write_text(json.dumps(legacy))
+    (DataFiles.under(tmp_path).bank).write_text(json.dumps(legacy))
     fake_bank.transactions = [debit("5", date(2026, 11, 14))]
 
     service.refresh()
@@ -392,7 +393,7 @@ def test_session_past_valid_until_is_not_connected(
 
 
 def test_corrupt_store_file_starts_disconnected(tmp_path: Path) -> None:
-    path = tmp_path / STORE_FILENAME
+    path = DataFiles.under(tmp_path).bank
     path.write_text("{not json")
 
     assert BankStore(path).load().session is None

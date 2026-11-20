@@ -6,9 +6,11 @@ import sys
 from enum import IntEnum
 
 from app.ai_categories.client import CategorisationUnavailableError
-from app.ai_categories.service import AutoCategoriser, find_auto_categoriser
+from app.ai_categories.service import AutoCategoriser
+from app.config import Settings
+from app.modules import Modules, build_modules
 from app.payments import Payment
-from app.refresh import BankStatus, Refresher, find_refresher
+from app.refresh import BankStatus, Refresher
 
 logger = logging.getLogger("app.sync")
 
@@ -52,15 +54,18 @@ def _categorise(auto_categoriser: AutoCategoriser, payments: list[Payment]) -> N
         logger.info("AI assigned categories to %d counterparties.", assigned)
 
 
+def run(modules: Modules) -> SyncResult:
+    if modules.refresher is None:
+        logger.error("Not synced: Enable Banking credentials are not configured.")
+        return SyncResult.FAILED
+    return sync(modules.refresher, modules.auto_categoriser)
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     # Request URLs carry account ids, which have no place in the system journal.
     logging.getLogger("httpx2").setLevel(logging.WARNING)
-    refresher = find_refresher()
-    if refresher is None:
-        logger.error("Not synced: Enable Banking credentials are not configured.")
-        return SyncResult.FAILED
-    return sync(refresher, find_auto_categoriser())
+    return run(build_modules(Settings()))
 
 
 if __name__ == "__main__":

@@ -1,12 +1,13 @@
-from typing import Annotated, Self
+from collections.abc import Callable
+from typing import Self
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.banking.client import BankApiError
 from app.banking.errors import BankErrorCode
-from app.banking.service import BankingService, InvalidStateError, find_banking_service
+from app.banking.service import InvalidStateError
 from app.banking.state import STATE_PATTERN
 
 # Also hard-coded in site/callback.html, the hosted page that relays to it.
@@ -30,20 +31,21 @@ def _back_to_dashboard(error: BankErrorCode | None = None) -> RedirectResponse:
     return RedirectResponse(location, status_code=303)
 
 
-def callback(
-    request: Request,
-    service: Annotated[BankingService | None, Depends(find_banking_service)],
-) -> RedirectResponse:
+Complete = Callable[[str, str], None]
+"""Finishes a bank connection from the code and state the bank sent back."""
+
+
+def _callback(request: Request, complete: Complete | None) -> RedirectResponse:
     try:
         query = CallbackQuery.model_validate(dict(request.query_params))
     except ValidationError:
         return _back_to_dashboard(BankErrorCode.INVALID_CALLBACK)
     if query.code is None:
         return _back_to_dashboard(BankErrorCode.ACCESS_DENIED)
-    if service is None:
+    if complete is None:
         return _back_to_dashboard(BankErrorCode.NOT_CONFIGURED)
     try:
-        service.complete(query.code, query.state)
+        complete(query.code, query.state)
     except InvalidStateError:
         return _back_to_dashboard(BankErrorCode.INVALID_STATE)
     except BankApiError:
@@ -51,8 +53,13 @@ def callback(
     return _back_to_dashboard()
 
 
-def create_router(local_callback_path: str | None = None) -> APIRouter:
+def create_router(complete: Complete | None, local_callback_path: str | None = None) -> APIRouter:
+    """Without `complete` (no bank credentials) the callback says Yiji is not configured."""
     router = APIRouter()
+
+    def callback(request: Request) -> RedirectResponse:
+        return _callback(request, complete)
+
     for path in {CALLBACK_PATH, local_callback_path} - {None}:
         router.add_api_route(path, callback, methods=["GET"])
     return router

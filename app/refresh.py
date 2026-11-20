@@ -2,18 +2,13 @@ from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import StrEnum
-from functools import lru_cache
-
-import httpx2
 
 from app.banking.client import BankApiError, BankSessionExpiredError
 from app.banking.history import HistoryStore
-from app.banking.service import BankingService, NotConnectedError, find_banking_service, local_now
-from app.config import get_settings
-from app.database import DATABASE_FILENAME
+from app.banking.service import BankingService, NotConnectedError, local_now
 from app.payments import Payment
 from app.rates.book import ExchangeRates, RateBook
-from app.rates.client import ExchangeRateClient, RatesUnavailableError
+from app.rates.client import RatesUnavailableError
 
 
 class BankStatus(StrEnum):
@@ -101,25 +96,3 @@ class Refresher:
             now,
             self._max_age,
         )
-
-
-@lru_cache
-def _build_refresher(bank: BankingService) -> Refresher:
-    settings = get_settings()
-    database = settings.data_dir / DATABASE_FILENAME
-    rates_http = httpx2.Client(
-        base_url=str(settings.exchange_rates_api_url),
-        timeout=settings.exchange_rates_timeout_seconds,
-    )
-    return Refresher(
-        bank,
-        HistoryStore(database),
-        RateBook(database, ExchangeRateClient(rates_http), settings.exchange_rate_lookback_days),
-        display_currencies=settings.display_currencies,
-        max_age=timedelta(minutes=settings.transactions_refresh_minutes),
-    )
-
-
-def find_refresher() -> Refresher | None:
-    bank = find_banking_service()
-    return None if bank is None else _build_refresher(bank)

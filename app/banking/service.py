@@ -1,11 +1,8 @@
 import secrets
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
-from functools import lru_cache
 
-import httpx2
-
-from app.bank_profiles import BankProfile, profile_for
+from app.bank_profiles import BankProfile
 from app.banking.client import (
     BankRequestRejectedError,
     BankSessionExpiredError,
@@ -14,9 +11,8 @@ from app.banking.client import (
 from app.banking.history import HistoryStore
 from app.banking.models import Transaction
 from app.banking.state import new_state, nonce_of
-from app.banking.store import STORE_FILENAME, BankStore, StoredSession, StoredState
-from app.config import MissingCredentialsError, Settings, get_settings
-from app.database import DATABASE_FILENAME
+from app.banking.store import BankStore, StoredSession, StoredState
+from app.config import Settings
 from app.spending import LONGEST_PERIOD, history_start
 
 
@@ -150,31 +146,3 @@ class BankingService:
             except BankRequestRejectedError:
                 continue
         return oldest_first[-1], self._client.fetch_transactions(account_uid, oldest_first[-1])
-
-
-@lru_cache
-def _build_banking_service() -> BankingService:
-    settings = get_settings()
-    app_id, key_path = settings.enable_banking_credentials()
-    http = httpx2.Client(
-        base_url=str(settings.enable_banking_api_url),
-        timeout=settings.enable_banking_timeout_seconds,
-    )
-    client = EnableBankingClient(http=http, app_id=app_id, key_path=key_path)
-    database = settings.data_dir / DATABASE_FILENAME
-    return BankingService(
-        client=client,
-        store=BankStore(settings.data_dir / STORE_FILENAME),
-        history=HistoryStore(database),
-        profile=profile_for(
-            settings.enable_banking_aspsp_name, settings.enable_banking_aspsp_country
-        ),
-        settings=settings,
-    )
-
-
-def find_banking_service() -> BankingService | None:
-    try:
-        return _build_banking_service()
-    except MissingCredentialsError:
-        return None

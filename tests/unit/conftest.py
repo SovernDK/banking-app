@@ -14,10 +14,10 @@ from app.bank_profiles import generic
 from app.banking.client import EnableBankingClient
 from app.banking.history import HistoryStore
 from app.banking.service import BankingService
-from app.banking.store import STORE_FILENAME, BankStore
-from app.categories import CATEGORIES_FILENAME, CategoryStore
+from app.banking.store import BankStore
+from app.categories import CategoryStore
 from app.config import Settings
-from app.database import DATABASE_FILENAME
+from app.modules import DataFiles
 from app.rates.book import RateBook
 from app.rates.client import ExchangeRateClient
 from app.refresh import Refresher
@@ -85,7 +85,7 @@ def fake_ollama(fake_ollama_app: FastAPI) -> FakeOllamaState:
 
 @pytest.fixture
 def category_store(tmp_path: Path, settings: Settings) -> CategoryStore:
-    return CategoryStore(tmp_path / CATEGORIES_FILENAME, settings.starter_categories)
+    return CategoryStore(DataFiles.under(tmp_path).categories, settings.starter_categories)
 
 
 @pytest.fixture
@@ -120,12 +120,12 @@ def clock() -> Clock:
 
 @pytest.fixture
 def store(tmp_path: Path) -> BankStore:
-    return BankStore(tmp_path / STORE_FILENAME)
+    return BankStore(DataFiles.under(tmp_path).bank)
 
 
 @pytest.fixture
 def database(tmp_path: Path) -> Path:
-    return tmp_path / DATABASE_FILENAME
+    return DataFiles.under(tmp_path).database
 
 
 @pytest.fixture

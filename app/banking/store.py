@@ -9,8 +9,6 @@ from app.json_file import write_atomically
 
 logger = logging.getLogger(__name__)
 
-STORE_FILENAME = "bank.json"
-
 
 class StoredSession(BaseModel):
     account_uids: list[str]

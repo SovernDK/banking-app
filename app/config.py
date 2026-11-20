@@ -1,4 +1,3 @@
-from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -238,8 +237,3 @@ class Settings(BaseSettings):
                 f"Enable Banking {self.enable_banking_environment} app id or key path is not set"
             )
         return app_id, key_path
-
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()

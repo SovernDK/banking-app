@@ -40,6 +40,8 @@ flowchart LR
     C
     P
   end
+  BM["build_modules(Settings)<br/>app/modules.py<br/>built once per process"] -.->|Modules| N
+  BM -.->|bank.complete| R
   N --> RF[Refresher<br/>app/refresh.py<br/>bank + rates → Refreshed, no errors raised]
   RF --> SV[BankingService<br/>app/banking/service.py<br/>bank connection + history writes]
   RF --> HS
@@ -249,7 +251,8 @@ sequenceDiagram
 <h2>Directory map</h2>
 <pre>
 app/
-  main.py            FastAPI app; mounts NiceGUI with ui.run_with
+  main.py            create_app(Settings()): builds the modules, mounts the bank router and NiceGUI (ui.run_with)
+  modules.py         build_modules(settings) → Modules (bank, refresher, category store, AI categoriser); DataFiles: the data-directory layout (bank.json, categories.json, yiji.sqlite3). The app, sync and backup each start here; nothing reads settings or builds a module elsewhere
   config.py          Settings (pydantic-settings; YIJI_* + ENABLE_BANKING_*)
   i18n.py            Language (pl/en/ja, labels PL/EN/JP), Text, Plural
   texts.py           Every user-facing string, in all languages
@@ -261,15 +264,15 @@ app/
   database.py        yiji.sqlite3 schema + connect (WAL, busy timeout)
   rates/             Frankfurter client; RateBook (stored rates, missing-range fetch), ExchangeRates, convert_payments
   refresh.py         Refresher.refresh(force): bank + rates in one step (works out which rates to fetch), outcome as a Refreshed value; shared by the dashboard and the daily sync
-  sync.py            python -m app.sync: refresher.refresh(force=True) → exit code + log lines, then AI categories
-  backup.py          python -m app.backup: dated copy of history + categories, prunes old ones
+  sync.py            python -m app.sync: run(build_modules(Settings())) → refresher.refresh(force=True) → exit code + log lines, then AI categories
+  backup.py          python -m app.backup: dated copy of history + categories (paths from DataFiles), prunes old ones
   spending.py        Period, Comparison (M2M/Y2Y shift), history_start, change, DailySpending
   spending_view.py   SpendingView: everything the dashboard shows, from payments + rates + categories (pure, no I/O); ViewQuery, SpendingFilter
   payment_methods.py PaymentMethod enum
   bank_profiles/     Per-bank mapping of transaction JSON → Payment: generic (ISO codes), mock_aspsp, pekao; profile_for()
   counterparties.py  counterparty_key (the one sameness rule) + Counterparties.label (one spelling per name, used by the view, settings and AI samples)
   categories.py      Category, CategoryBook (rules by counterparty name, AI-assigned marks), CategoryStore (load/save/update)
-  ai_categories/     OllamaCategoriser (chat API, answers by id), AutoCategoriser (batches, saves), find_auto_categoriser
+  ai_categories/     OllamaCategoriser (chat API, answers by id), AutoCategoriser (batches, saves), build_auto_categoriser(settings, store)
   json_file.py       Atomic JSON write shared by the stores
   ui/
     palette.py       Colour tokens, light + dark (page_shell exposes them as CSS variables; --q-* are !important to beat Quasar's inline brand colours)

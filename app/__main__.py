@@ -2,9 +2,9 @@ import sys
 
 import uvicorn
 
-from app.config import LocalCallbackError, get_settings
+from app.config import LocalCallbackError, Settings
 
-settings = get_settings()
+settings = Settings()
 try:
     settings.check_local_callback()
 except LocalCallbackError as error:

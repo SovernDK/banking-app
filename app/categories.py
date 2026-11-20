@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-CATEGORIES_FILENAME = "categories.json"
 
 CategoryName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
 

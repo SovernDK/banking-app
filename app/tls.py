@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.x509.oid import NameOID
 
-from app.config import PROJECT_ROOT, get_settings
+from app.config import PROJECT_ROOT, Settings
 
 CERTIFICATE_VALIDITY = timedelta(days=365)
 
@@ -60,7 +60,7 @@ def write_localhost_certificate(certificate_path: Path, key_path: Path) -> None:
 
 
 if __name__ == "__main__":
-    tls_dir = get_settings().data_dir / "tls"
+    tls_dir = Settings().data_dir / "tls"
     certificate_file, key_file = tls_dir / "localhost.crt", tls_dir / "localhost.key"
     write_localhost_certificate(certificate_file, key_file)
 

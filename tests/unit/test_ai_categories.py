@@ -157,7 +157,9 @@ def test_model_outage_or_bad_answer_is_reported(
         auto_categoriser.run([payment("1", DAY, payee="Lidl")])
 
 
-def test_ai_categories_are_off_without_an_ollama_key(settings: Settings) -> None:
-    assert build_auto_categoriser(settings) is None
+def test_ai_categories_are_off_without_an_ollama_key(
+    settings: Settings, category_store: CategoryStore
+) -> None:
+    assert build_auto_categoriser(settings, category_store) is None
     with_key = settings.model_copy(update={"ollama_api_key": SecretStr("key")})
-    assert build_auto_categoriser(with_key) is not None
+    assert build_auto_categoriser(with_key, category_store) is not None

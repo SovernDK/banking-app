@@ -11,17 +11,17 @@ from contextlib import closing
 from datetime import date
 from pathlib import Path
 
-from app.categories import CATEGORIES_FILENAME
-from app.config import get_settings
-from app.database import DATABASE_FILENAME, connect
+from app.config import Settings
+from app.database import connect
+from app.modules import DataFiles
 
 logger = logging.getLogger("app.backup")
 
 
-def back_up(data_dir: Path, backup_dir: Path, today: date, keep: int) -> Path | None:
-    """The folder written, or None before the first sync has stored anything."""
-    database = data_dir / DATABASE_FILENAME
-    if not database.exists():
+def back_up(files: DataFiles, backup_dir: Path, today: date, keep: int) -> Path | None:
+    """The folder written, or None before the first sync has stored anything. The bank
+    connection is left out: it is renewed by reconnecting, while the history is not."""
+    if not files.database.exists():
         return None
     backup_dir.mkdir(parents=True, exist_ok=True)
     folder = backup_dir / f"yiji-{today.isoformat()}"
@@ -30,13 +30,12 @@ def back_up(data_dir: Path, backup_dir: Path, today: date, keep: int) -> Path | 
     try:
         # SQLite's backup API copies a consistent snapshot even while the app is writing.
         with (
-            connect(database) as source,
-            closing(sqlite3.connect(staging / DATABASE_FILENAME)) as target,
+            connect(files.database) as source,
+            closing(sqlite3.connect(staging / files.database.name)) as target,
         ):
             source.backup(target)
-        categories = data_dir / CATEGORIES_FILENAME
-        if categories.exists():
-            shutil.copy2(categories, staging / CATEGORIES_FILENAME)
+        if files.categories.exists():
+            shutil.copy2(files.categories, staging / files.categories.name)
         shutil.rmtree(folder, ignore_errors=True)
         staging.rename(folder)
     finally:
@@ -48,8 +47,10 @@ def back_up(data_dir: Path, backup_dir: Path, today: date, keep: int) -> Path | 
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    settings = get_settings()
-    folder = back_up(settings.data_dir, settings.backup_dir, date.today(), settings.backup_keep)
+    settings = Settings()
+    folder = back_up(
+        DataFiles.under(settings.data_dir), settings.backup_dir, date.today(), settings.backup_keep
+    )
     if folder is None:
         logger.info("Nothing to back up yet.")
     else:

@@ -6,20 +6,19 @@ from nicegui import run, ui
 
 from app import texts
 from app.ai_categories.client import CategorisationUnavailableError
-from app.ai_categories.service import AutoCategoriser, find_auto_categoriser
+from app.ai_categories.service import AutoCategoriser
 from app.banking.client import BankApiError
 from app.banking.errors import BankErrorCode
-from app.banking.service import BankingService, find_banking_service
+from app.banking.service import BankingService
 from app.categories import (
-    CATEGORIES_FILENAME,
     CategoryBook,
     CategoryStore,
     DuplicateCategoryError,
     InvalidCategoryNameError,
 )
-from app.config import get_settings
 from app.i18n import Language
-from app.refresh import BankStatus, Refreshed, find_refresher
+from app.modules import Modules
+from app.refresh import BankStatus, Refreshed
 from app.spending import Comparison, Period
 from app.spending_view import (
     UNCATEGORISED,
@@ -350,7 +349,7 @@ def _show_connection(
     return needs_connection
 
 
-def register() -> None:
+def register(modules: Modules) -> None:
     @ui.page("/")
     async def dashboard_page(
         period: str | None = None,
@@ -360,8 +359,9 @@ def register() -> None:
         category: str | None = None,
         bank_error: str | None = None,
     ) -> None:
-        settings = get_settings()
-        service = find_banking_service()
+        settings = modules.settings
+        service = modules.bank
+        refresher = modules.refresher
         error = _error_from(bank_error)
         with page_shell(settings.app_title, settings.default_language) as shell:
             language = shell.language
@@ -372,7 +372,6 @@ def register() -> None:
                     )
                     if settings.enable_banking_environment == "sandbox":
                         chip("science", texts.SANDBOX(language))
-                refresher = find_refresher()
                 if service is None or refresher is None:
                     alert(texts.BANK_ERRORS[BankErrorCode.NOT_CONFIGURED](language))
                     return
@@ -388,9 +387,7 @@ def register() -> None:
                     return
                 if refreshed.rates_error is not None:
                     alert(texts.RATES_UNAVAILABLE(language), testid="rates-error")
-                store = CategoryStore(
-                    settings.data_dir / CATEGORIES_FILENAME, settings.starter_categories
-                )
+                store = modules.category_store
                 book = await run.io_bound(store.load)
                 view = SpendingView(
                     refreshed.payments,
@@ -404,4 +401,4 @@ def register() -> None:
             query = view.parse(
                 period=period, compare=compare, counterparty=counterparty, category=category
             )
-            _spending_view(view, query, shell, band, store, book, find_auto_categoriser())
+            _spending_view(view, query, shell, band, store, book, modules.auto_categoriser)

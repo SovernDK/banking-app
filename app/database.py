@@ -3,8 +3,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-DATABASE_FILENAME = "yiji.sqlite3"
-
 # The daily sync and the running app may write at the same moment; wait rather than fail.
 _BUSY_TIMEOUT_SECONDS = 10
 

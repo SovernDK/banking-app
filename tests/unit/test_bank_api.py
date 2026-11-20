@@ -1,12 +1,9 @@
-from collections.abc import Iterator
-
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.bank import CALLBACK_PATH, create_router
-from app.banking.service import InvalidStateError, find_banking_service
-from app.main import app
+from app.api.bank import CALLBACK_PATH, Complete, create_router
+from app.banking.service import InvalidStateError
 
 
 class RecordingService:
@@ -23,17 +20,20 @@ class RecordingService:
 STATE = "8100.abcdefghijklmnop"
 
 
-@pytest.fixture
-def recording_service() -> Iterator[RecordingService]:
-    service = RecordingService()
-    app.dependency_overrides[find_banking_service] = lambda: service
-    yield service
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture
-def client() -> TestClient:
+def _client(complete: Complete | None, local_callback_path: str | None = None) -> TestClient:
+    app = FastAPI()
+    app.include_router(create_router(complete, local_callback_path))
     return TestClient(app, follow_redirects=False)
+
+
+@pytest.fixture
+def recording_service() -> RecordingService:
+    return RecordingService()
+
+
+@pytest.fixture
+def client(recording_service: RecordingService) -> TestClient:
+    return _client(recording_service.complete)
 
 
 def test_successful_callback_completes_connection_and_returns_to_dashboard(
@@ -78,14 +78,8 @@ def test_callback_with_unknown_state_is_rejected(
     assert response.headers["location"] == "/?bank_error=invalid_state"
 
 
-def test_callback_without_configured_credentials_reports_not_configured(
-    client: TestClient,
-) -> None:
-    app.dependency_overrides[find_banking_service] = lambda: None
-    try:
-        response = client.get(CALLBACK_PATH, params={"code": "abc", "state": STATE})
-    finally:
-        app.dependency_overrides.clear()
+def test_callback_without_configured_credentials_reports_not_configured() -> None:
+    response = _client(None).get(CALLBACK_PATH, params={"code": "abc", "state": STATE})
 
     assert response.headers["location"] == "/?bank_error=not_configured"
 
@@ -93,11 +87,7 @@ def test_callback_without_configured_credentials_reports_not_configured(
 def test_callback_is_also_served_on_local_redirect_path(
     recording_service: RecordingService,
 ) -> None:
-    local_app = FastAPI()
-    local_app.include_router(create_router(local_callback_path="/callback"))
-    local_app.dependency_overrides[find_banking_service] = lambda: recording_service
-
-    response = TestClient(local_app, follow_redirects=False).get(
+    response = _client(recording_service.complete, "/callback").get(
         "/callback", params={"code": "abc", "state": STATE}
     )
 

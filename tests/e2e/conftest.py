@@ -10,9 +10,8 @@ from typing import Any, Protocol
 import httpx2
 import pytest
 
-from app.banking.store import STORE_FILENAME
-from app.categories import CATEGORIES_FILENAME, CategoryBook, CategoryStore
-from app.database import DATABASE_FILENAME
+from app.categories import CategoryBook, CategoryStore
+from app.modules import DataFiles
 from app.tls import generate_private_key, write_private_key
 
 SERVER_START_TIMEOUT_SECONDS = 20
@@ -187,9 +186,10 @@ def fake_bank(
         httpx2.post(f"{fake_bank_url}/_fake/configure", json=config).raise_for_status()
 
     configure()
-    for filename in (STORE_FILENAME, CATEGORIES_FILENAME, DATABASE_FILENAME):
-        (app_data_dir / filename).unlink(missing_ok=True)
-    for journal in app_data_dir.glob(f"{DATABASE_FILENAME}-*"):
+    files = DataFiles.under(app_data_dir)
+    for path in (files.bank, files.categories, files.database):
+        path.unlink(missing_ok=True)
+    for journal in app_data_dir.glob(f"{files.database.name}-*"):
         journal.unlink()
     return configure
 
@@ -206,6 +206,6 @@ def seed_categories(
             category = book.create(name)
             for counterparty in counterparties:
                 book.assign(counterparty, category.id)
-        CategoryStore(app_data_dir / CATEGORIES_FILENAME, []).save(book)
+        CategoryStore(DataFiles.under(app_data_dir).categories, []).save(book)
 
     return seed
