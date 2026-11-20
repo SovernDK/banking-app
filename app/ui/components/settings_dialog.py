@@ -4,8 +4,9 @@ from nicegui import ui
 
 from app import texts
 from app.i18n import Language
+from app.spending_view import CounterpartyTotal
 from app.ui.components.category_list import CategoryEntry, CategoryList
-from app.ui.components.counterparties_table import CounterpartiesTable, CounterpartyRow
+from app.ui.components.counterparties_table import CounterpartiesTable
 from app.ui.components.ghost_button import ghost_button
 
 
@@ -25,7 +26,7 @@ class SettingsDialog:
     def __init__(
         self,
         categories: list[CategoryEntry],
-        counterparties: list[CounterpartyRow],
+        counterparties: list[CounterpartyTotal],
         category_names: dict[str, str],
         currency: str,
         on_rename: Callable[[str, str], Awaitable[None]],

@@ -1,8 +1,6 @@
 import functools
 from collections.abc import Awaitable, Callable
-from datetime import date
-from decimal import Decimal
-from urllib.parse import urlencode
+from dataclasses import replace
 
 from nicegui import run, ui
 
@@ -19,28 +17,23 @@ from app.categories import (
     DuplicateCategoryError,
     InvalidCategoryNameError,
 )
-from app.config import Settings, get_settings
+from app.config import get_settings
 from app.i18n import Language
-from app.payments import Payment, counterparty_name, display_name
-from app.rates.book import Conversion, convert_payments
+from app.payments import Payment
 from app.rates.client import RatesUnavailableError
-from app.spending import (
-    Comparison,
-    Period,
-    Share,
-    all_time_spending_by,
-    booked_within,
-    daily_spending,
-    main_currency,
-    merge_spellings,
-    spending_by,
-    top_shares,
+from app.spending import Comparison, Period
+from app.spending_view import (
+    UNCATEGORISED,
+    Overview,
+    Slice,
+    SliceKind,
+    SpendingFilter,
+    SpendingView,
+    ViewQuery,
 )
-from app.spending_filter import UNCATEGORISED, SpendingFilter, counterparty_names
 from app.ui.components import (
     CategoryEntry,
     CategoryOption,
-    CounterpartyRow,
     Donut,
     DonutSlice,
     PageShell,
@@ -60,6 +53,7 @@ from app.ui.components import (
     section,
     settings_button,
 )
+from app.ui.palette import LIGHT
 
 
 def _error_from(code: str | None) -> BankErrorCode | None:
@@ -81,58 +75,34 @@ def _connector(service: BankingService, language: Language) -> Callable[[], Awai
     return connect
 
 
-CHART_SLICE_LIMIT = 7
-
-
-def _counterparty_slices(shares: list[Share[str]], language: Language) -> list[DonutSlice]:
-    kept, rest = top_shares(shares, CHART_SLICE_LIMIT)
-    slices = [
-        DonutSlice(label=share.key, amount=share.amount, colour_slot=rank)
-        for rank, share in enumerate(kept)
+def _donut_slices(slices: list[Slice], language: Language) -> list[DonutSlice]:
+    labels = {
+        SliceKind.OTHER: texts.OTHER(language),
+        SliceKind.UNCATEGORISED: texts.UNCATEGORISED(language),
+    }
+    return [
+        DonutSlice(
+            label=part.name if part.name is not None else labels[part.kind],
+            amount=part.amount,
+            colour_slot=part.colour_slot,
+            hatched=part.kind is SliceKind.OTHER,
+        )
+        for part in slices
     ]
-    if rest:
-        slices.append(DonutSlice(label=texts.OTHER(language), amount=rest, hatched=True))
-    return slices
 
 
-def _category_slices(
-    shares: list[Share[str | None]], book: CategoryBook, language: Language
-) -> list[DonutSlice]:
-    categorised = [
-        Share(key=category, amount=share.amount)
-        for share in shares
-        if share.key and (category := book.get(share.key))
-    ]
-    uncategorised = sum((share.amount for share in shares if share.key is None), Decimal(0))
-    limit = CHART_SLICE_LIMIT - 1 if uncategorised else CHART_SLICE_LIMIT
-    kept, rest = top_shares(categorised, limit)
-    slices = [
-        DonutSlice(label=share.key.name, amount=share.amount, colour_slot=share.key.colour_slot)
-        for share in kept
-    ]
-    if rest:
-        slices.append(DonutSlice(label=texts.OTHER(language), amount=rest, hatched=True))
-    if uncategorised:
-        slices.append(DonutSlice(label=texts.UNCATEGORISED(language), amount=uncategorised))
-    return slices
-
-
-def _currency_options(settings: Settings, payments: list[Payment]) -> list[str]:
-    """The configured display currencies, then any other currency the payments came in."""
-    others = sorted({payment.currency for payment in payments} - set(settings.display_currencies))
-    return [*settings.display_currencies, *others]
+def _overview_label(overview: Overview, period: Period, language: Language) -> str:
+    in_sentence = texts.PERIODS_IN_SENTENCE[period](language)
+    if overview.uncategorised:
+        return texts.SPENT_UNCATEGORISED(language, period=in_sentence)
+    if overview.subject:
+        return texts.SPENT_ON(language, subject=overview.subject, period=in_sentence)
+    return texts.SPENT(language, period=in_sentence)
 
 
 def _spending_view(
-    conversion: Conversion,
-    currency: str,
-    currencies: list[str],
-    default_currency: str,
-    today: date,
-    initial: Period,
-    initial_comparison: Comparison,
-    counterparty_query: str | None,
-    category_query: str | None,
+    view: SpendingView,
+    query: ViewQuery,
     shell: PageShell,
     band: ui.column,
     store: CategoryStore,
@@ -141,51 +111,15 @@ def _spending_view(
 ) -> None:
     language = shell.language
     dark_mode = shell.dark_mode
-    payments = conversion.payments
-    spending = {period: daily_spending(payments, currency, period, today) for period in Period}
-    selected = initial
-    comparison = initial_comparison
-
-    def spends_in(period: Period) -> bool:
-        return any(entry.amount for entry in spending[period])
-
-    counterparties = counterparty_names(payments, currency)
-    spending_filter = SpendingFilter.parse(counterparty_query, category_query, counterparties, book)
-
-    def url(shown_currency: str) -> str:
-        chosen_currency = {"currency": shown_currency} if shown_currency != default_currency else {}
-        query = urlencode(
-            {
-                "period": selected.value,
-                **spending_filter.query(),
-                "compare": comparison.value,
-                **chosen_currency,
-            }
-        )
-        return f"/?{query}"
+    currency = view.currency
 
     def show_url() -> None:
         # Settings callbacks run inside dialogs that may already be gone; the band outlives them
         # and tells NiceGUI which browser to send the URL to.
         with band:
-            ui.navigate.history.replace(url(currency))
+            ui.navigate.history.replace(view.url(query))
 
-    def overview_label() -> str:
-        period = texts.PERIODS_IN_SENTENCE[selected](language)
-        if spending_filter.category_id == UNCATEGORISED:
-            return texts.SPENT_UNCATEGORISED(language, period=period)
-        subject = spending_filter.subject(book)
-        if subject:
-            return texts.SPENT_ON(language, subject=subject, period=period)
-        return texts.SPENT(language, period=period)
-
-    def shown(candidates: list[Payment]) -> list[Payment]:
-        """The payments behind the total and its comparison."""
-        matching = (payment for payment in candidates if spending_filter.matches(payment, book))
-        return booked_within(matching, selected, [today, comparison.shift(today)])
-
-    def show_left_out() -> None:
-        left_out = len(shown(conversion.left_out))
+    def show_left_out(left_out: int) -> None:
         left_out_notice.clear()
         left_out_notice.set_visibility(left_out > 0)
         if left_out:
@@ -197,16 +131,16 @@ def _spending_view(
     spending_overview: SpendingOverview | None = None
 
     def show_overview() -> None:
-        show_left_out()
+        overview = view.overview(query)
+        show_left_out(overview.left_out)
         if spending_overview is None:
             return
-        matching = [payment for payment in payments if spending_filter.matches(payment, book)]
         spending_overview.show(
-            daily_spending(matching, currency, selected, today),
-            daily_spending(matching, currency, selected, comparison.shift(today)),
-            overview_label(),
-            comparison,
-            exchanged=bool(shown(conversion.exchanged)),
+            overview.days,
+            overview.compared_days,
+            _overview_label(overview, query.period, language),
+            query.comparison,
+            exchanged=overview.exchanged,
         )
 
     @ui.refreshable
@@ -224,14 +158,6 @@ def _spending_view(
             CategoryOption(id=UNCATEGORISED, name=texts.UNCATEGORISED(language), colour_slot=None),
         ]
 
-    def category_id_of(payment: Payment) -> str | None:
-        category = book.category_of(counterparty_name(payment))
-        return category.id if category else None
-
-    def category_slices() -> list[DonutSlice]:
-        shares = spending_by(payments, currency, selected, today, category_id_of)
-        return _category_slices(shares, book, language)
-
     def assigned_category(counterparty: str) -> str | None:
         category = book.category_of(counterparty)
         return category.id if category else None
@@ -248,29 +174,29 @@ def _spending_view(
     category_donut: Donut | None = None
 
     def show_categories() -> None:
-        nonlocal spending_filter
-        if category_donut is not None:
-            category_donut.update(category_slices())
+        nonlocal query
+        shown = view.breakdown(query.period)
+        if category_donut is not None and shown is not None:
+            category_donut.update(_donut_slices(shown.categories, language))
         settings.update(
             category_entries(), category_names(), assigned_category, book.is_ai_assigned
         )
-        revalidated = SpendingFilter.parse(
-            spending_filter.counterparty, spending_filter.category_id, counterparties, book
-        )
-        if revalidated != spending_filter:
-            spending_filter = revalidated
+        checked = view.checked(query)
+        if checked != query:
+            query = checked
             show_url()
-        filters.update_categories(category_options(), spending_filter)
+        filters.update_categories(category_options(), query.spending_filter)
         show_overview()
 
     async def change_and_show(change: Callable[[CategoryBook], None]) -> None:
-        nonlocal book
+        nonlocal book, view
 
         def changed(fresh: CategoryBook) -> CategoryBook:
             change(fresh)
             return fresh
 
         book = await run.io_bound(store.update, changed)
+        view = view.with_book(book)
         show_categories()
 
     async def change_category(counterparty: str, value: str | None) -> None:
@@ -298,9 +224,9 @@ def _spending_view(
         await change_and_show(lambda fresh: fresh.delete(category_id))
 
     async def categorise_with_ai(categoriser: AutoCategoriser) -> None:
-        nonlocal book
+        nonlocal book, view
         try:
-            assigned = await run.io_bound(categoriser.run, payments)
+            assigned = await run.io_bound(categoriser.run, view.payments)
         except CategorisationUnavailableError:
             ui.notify(texts.AI_UNAVAILABLE(language), type="negative")
         else:
@@ -310,20 +236,12 @@ def _spending_view(
                 ui.notify(texts.AI_NOTHING_ASSIGNED(language))
         # A failure part way still keeps the batches answered before it.
         book = await run.io_bound(store.load)
+        view = view.with_book(book)
         show_categories()
 
     settings = SettingsDialog(
         category_entries(),
-        [
-            CounterpartyRow(
-                name=share.key,
-                amount=share.amount,
-                category_id=assigned_category(share.key),
-                ai_assigned=book.is_ai_assigned(share.key),
-            )
-            for share in all_time_spending_by(payments, currency, counterparty_name)
-            if share.key is not None
-        ],
+        view.counterparty_totals(),
         category_names(),
         currency,
         rename_category,
@@ -341,16 +259,14 @@ def _spending_view(
     def breakdown() -> None:
         nonlocal category_donut
         category_donut = None
-        if not spends_in(selected):
+        shown = view.breakdown(query.period)
+        if shown is None:
             return
         dark = bool(dark_mode.value)
         with ui.grid().classes("w-full grid-cols-1 md:grid-cols-2 gap-4"):
             with section(texts.COUNTERPARTIES(language), currency):
-                counterparty_shares = merge_spellings(
-                    spending_by(payments, currency, selected, today, display_name)
-                )
                 Donut(
-                    _counterparty_slices(counterparty_shares, language),
+                    _donut_slices(shown.counterparties, language),
                     currency,
                     legend_label=texts.COUNTERPARTIES(language),
                     dark=dark,
@@ -358,7 +274,7 @@ def _spending_view(
                 )
             with section(texts.CATEGORIES(language), currency):
                 category_donut = Donut(
-                    category_slices(),
+                    _donut_slices(shown.categories, language),
                     currency,
                     legend_label=texts.CATEGORIES(language),
                     dark=dark,
@@ -366,36 +282,36 @@ def _spending_view(
                 )
 
     def select(period: Period) -> None:
-        nonlocal selected
-        selected = period
+        nonlocal query
+        query = replace(query, period=period)
         show_url()
         show_overview()
         breakdown.refresh()
 
-    def compare(value: Comparison) -> None:
-        nonlocal comparison
-        comparison = value
+    def compare(comparison: Comparison) -> None:
+        nonlocal query
+        query = replace(query, comparison=comparison)
         show_url()
         show_overview()
 
-    def show_in(value: str) -> None:
+    def show_in(chosen_currency: str) -> None:
         # Every amount on the page changes; the filter sits at the top, so a reload costs no
         # scroll position.
-        ui.navigate.to(url(value))
+        ui.navigate.to(view.url(query, chosen_currency))
 
-    def choose(value: SpendingFilter) -> None:
-        nonlocal spending_filter
-        spending_filter = value
+    def choose(spending_filter: SpendingFilter) -> None:
+        nonlocal query
+        query = replace(query, spending_filter=spending_filter)
         show_url()
         show_overview()
 
     with band:
         with ui.row().classes("w-full items-center gap-4"):
-            period_filter(initial, select, language)
-            comparison_filter(comparison, compare, language)
-            currency_filter(currencies, currency, show_in, language)
+            period_filter(query.period, select, language)
+            comparison_filter(query.comparison, compare, language)
+            currency_filter(view.currencies, currency, show_in, language)
         filters = SpendingFilters(
-            counterparties, category_options(), spending_filter, choose, language
+            view.counterparties, category_options(), query.spending_filter, choose, language
         )
         left_out_notice = ui.column().classes("w-full")
         overview()
@@ -471,35 +387,29 @@ def register() -> None:
                 if error:
                     alert(texts.BANK_ERRORS[error](language))
                 payments, needs_connection = await _payments_or_connect(service, language)
+                if not payments:
+                    if not needs_connection:
+                        empty_state(texts.NO_RECENT_SPENDING(language))
+                    return
                 try:
                     await run.io_bound(service.refresh_rates, payments)
                 except RatesUnavailableError:
                     alert(texts.RATES_UNAVAILABLE(language), testid="rates-error")
                 rates = await run.io_bound(service.exchange_rates)
-                default_currency = main_currency(payments, rates)
-                if default_currency is None:
-                    if not needs_connection:
-                        empty_state(texts.NO_RECENT_SPENDING(language))
-                    return
-                currencies = _currency_options(settings, payments)
-                shown_currency = currency if currency in currencies else default_currency
                 store = CategoryStore(
                     settings.data_dir / CATEGORIES_FILENAME, settings.starter_categories
                 )
                 book = await run.io_bound(store.load)
-            _spending_view(
-                convert_payments(payments, shown_currency, rates),
-                shown_currency,
-                currencies,
-                default_currency,
-                service.today(),
-                Period.parse(period),
-                Comparison.parse(compare),
-                counterparty,
-                category,
-                shell,
-                band,
-                store,
-                book,
-                find_auto_categoriser(),
+                view = SpendingView(
+                    payments,
+                    rates,
+                    display_currencies=settings.display_currencies,
+                    requested_currency=currency,
+                    book=book,
+                    today=service.today(),
+                    slice_limit=len(LIGHT.categories),
+                )
+            query = view.parse(
+                period=period, compare=compare, counterparty=counterparty, category=category
             )
+            _spending_view(view, query, shell, band, store, book, find_auto_categoriser())

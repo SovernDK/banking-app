@@ -12,10 +12,11 @@ from pydantic import HttpUrl
 from app.banking.client import BankApiError, BankSessionExpiredError
 from app.banking.service import BankingService, InvalidStateError, NotConnectedError
 from app.banking.store import STORE_FILENAME, BankStore
+from app.categories import CategoryBook
 from app.config import Settings
 from app.payment_methods import PaymentMethod
 from app.payments import Payment
-from app.spending_filter import counterparty_names
+from app.spending_view import SpendingView
 from tests.fakes.enable_banking import FAKE_CODE, FakeBankState, debit
 from tests.unit.conftest import Clock
 
@@ -379,4 +380,14 @@ def test_history_lists_the_newest_payments_first_so_their_spelling_names_ties(
     connect(service)
     service.refresh()
 
-    assert counterparty_names(service.payments(), "EUR") == ["Netflix"]
+    view = SpendingView(
+        service.payments(),
+        service.exchange_rates(),
+        display_currencies=["EUR"],
+        requested_currency=None,
+        book=CategoryBook(),
+        today=service.today(),
+        slice_limit=7,
+    )
+
+    assert view.counterparties == ["Netflix"]

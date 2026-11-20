@@ -2,7 +2,7 @@ from app.ui.components.alert import alert
 from app.ui.components.category_list import CategoryEntry, CategoryList
 from app.ui.components.chart import chart
 from app.ui.components.chip import chip
-from app.ui.components.counterparties_table import CounterpartiesTable, CounterpartyRow
+from app.ui.components.counterparties_table import CounterpartiesTable
 from app.ui.components.donut import Donut, DonutSlice
 from app.ui.components.empty_state import empty_state
 from app.ui.components.ghost_button import ghost_button
@@ -21,7 +21,6 @@ __all__ = [
     "CategoryList",
     "CategoryOption",
     "CounterpartiesTable",
-    "CounterpartyRow",
     "Donut",
     "DonutSlice",
     "PageShell",

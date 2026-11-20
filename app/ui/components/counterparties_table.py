@@ -1,21 +1,12 @@
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
-from decimal import Decimal
 
 from nicegui import ui
 from nicegui.events import ValueChangeEventArguments
 
 from app import texts
 from app.i18n import Language
+from app.spending_view import CounterpartyTotal
 from app.ui import format as fmt
-
-
-@dataclass(frozen=True)
-class CounterpartyRow:
-    name: str
-    amount: Decimal
-    category_id: str | None
-    ai_assigned: bool = False
 
 
 class CounterpartiesTable:
@@ -24,7 +15,7 @@ class CounterpartiesTable:
 
     def __init__(
         self,
-        rows: list[CounterpartyRow],
+        rows: list[CounterpartyTotal],
         categories: dict[str, str],
         currency: str,
         on_change: Callable[[str, str | None], Awaitable[None]],

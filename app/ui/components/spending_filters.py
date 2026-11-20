@@ -6,7 +6,7 @@ from nicegui.events import ValueChangeEventArguments
 
 from app import texts
 from app.i18n import Language
-from app.spending_filter import ALL, SpendingFilter
+from app.spending_view import ALL, SpendingFilter
 from app.ui.components.ghost_button import ghost_button
 from app.ui.palette import LIGHT
 

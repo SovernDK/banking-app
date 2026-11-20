@@ -28,6 +28,9 @@ The ECB reference rate published on a payment's booking date, or the latest one 
 The same number of days as the selected period, ending one month (M2M) or one year (Y2Y) before today; always shown, hatched beside the current bars. Days the bank gave no history for count as no spending.
 _Avoid_: Previous period, baseline
 
+**Shown days**:
+The days of the selected period plus its comparison, narrowed by the active filter: what the total and the chart are made of. Notices about conversion count only payments in the shown days.
+
 ## Bank
 
 **Bank connection**:
