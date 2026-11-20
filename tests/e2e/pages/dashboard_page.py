@@ -28,6 +28,15 @@ class DashboardPage:
         self.page.keyboard.type(category)
         self.page.keyboard.press("Enter")
 
+    def categorise_with_ai(self) -> None:
+        self.page.get_by_test_id("categorise-with-ai").click()
+
+    def ai_badge(self, counterparty: str) -> Locator:
+        row = self.counterparties.get_by_role("listitem").filter(
+            has=self.category_select(counterparty)
+        )
+        return row.get_by_test_id("ai-badge")
+
     def choose_language(self, label: str) -> None:
         self.language_picker.click()
         self.page.get_by_role("option", name=label, exact=True).click()

@@ -124,6 +124,38 @@ PICK_CATEGORY_HINT = Text(
     en="Pick a category for each name; it applies to all their payments",
     ja="名前ごとにカテゴリを選んでください。その名前のすべての支払いに適用されます",
 )
+CATEGORISE_WITH_AI = Text(
+    pl="Przypisz kategorie z AI", en="Categorise with AI", ja="AIでカテゴリを割り当て"
+)
+AI_NOT_CONFIGURED = Text(
+    pl="Dodaj klucz OLLAMA_API_KEY, aby AI przypisywało kategorie.",
+    en="Add an OLLAMA_API_KEY to let AI assign categories.",
+    ja="AIにカテゴリを割り当てさせるには OLLAMA_API_KEY を設定してください。",
+)
+AI_ASSIGNED_BADGE = Text(pl="AI", en="AI", ja="AI")
+AI_ASSIGNED = Text(pl="Kategorię wybrało AI", en="Category chosen by AI", ja="AIが選んだカテゴリ")
+AI_CATEGORISED = Plural(
+    pl=(
+        "AI przypisało kategorię {count} kontrahentowi.",
+        "AI przypisało kategorie {count} kontrahentom.",
+        "AI przypisało kategorie {count} kontrahentom.",
+    ),
+    en=(
+        "AI assigned a category to {count} counterparty.",
+        "AI assigned categories to {count} counterparties.",
+    ),
+    ja="AIが{count}件の取引先にカテゴリを割り当てました。",
+)
+AI_NOTHING_ASSIGNED = Text(
+    pl="AI nie znalazło nic do przypisania.",
+    en="AI found nothing it could assign.",
+    ja="AIが割り当てられるものはありませんでした。",
+)
+AI_UNAVAILABLE = Text(
+    pl="AI jest teraz niedostępne. Spróbuj później.",
+    en="AI is unavailable right now. Try again later.",
+    ja="現在AIを利用できません。後でもう一度お試しください。",
+)
 CATEGORY_FOR = Text(pl="Kategoria dla {name}", en="Category for {name}", ja="{name}のカテゴリ")
 CATEGORY_NAME_OF = Text(pl="Nazwa kategorii {name}", en="Name of {name}", ja="{name}の名前")
 DONE = Text(pl="Gotowe", en="Done", ja="完了")

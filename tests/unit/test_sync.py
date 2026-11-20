@@ -4,10 +4,13 @@ from decimal import Decimal
 
 import pytest
 
+from app.ai_categories.service import AutoCategoriser
 from app.banking.service import BankingService
+from app.categories import CategoryStore
 from app.sync import SyncResult, main, sync
 from tests.fakes.enable_banking import FakeBankState, debit
 from tests.fakes.exchange_rates import FakeRatesState
+from tests.fakes.ollama import FakeOllamaState
 from tests.unit.conftest import Clock
 
 Connect = Callable[[BankingService], None]
@@ -88,6 +91,43 @@ def test_rates_outage_fails_the_sync_but_keeps_the_payments(
     connect(service)
 
     assert sync(service) is SyncResult.FAILED
+    assert len(service.payments()) == 1
+
+
+def test_sync_lets_the_model_categorise_new_counterparties(
+    service: BankingService,
+    connect: Connect,
+    fake_bank: FakeBankState,
+    fake_ollama: FakeOllamaState,
+    auto_categoriser: AutoCategoriser,
+    category_store: CategoryStore,
+    clock: Clock,
+) -> None:
+    fake_bank.transactions = [debit("7", clock().date(), creditor="Lidl")]
+    fake_ollama.categories = {"Lidl": "Groceries"}
+    connect(service)
+
+    assert sync(service, auto_categoriser) is SyncResult.SYNCED
+
+    category = category_store.load().category_of("Lidl")
+    assert category is not None and category.name == "Groceries"
+
+
+def test_model_outage_leaves_payments_uncategorised_but_the_sync_succeeds(
+    service: BankingService,
+    connect: Connect,
+    fake_bank: FakeBankState,
+    fake_ollama: FakeOllamaState,
+    auto_categoriser: AutoCategoriser,
+    category_store: CategoryStore,
+    clock: Clock,
+) -> None:
+    fake_bank.transactions = [debit("7", clock().date(), creditor="Lidl")]
+    fake_ollama.failure_status = 503
+    connect(service)
+
+    assert sync(service, auto_categoriser) is SyncResult.SYNCED
+    assert category_store.load().category_of("Lidl") is None
     assert len(service.payments()) == 1
 
 

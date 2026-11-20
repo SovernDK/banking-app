@@ -1,3 +1,4 @@
+import functools
 from collections.abc import Awaitable, Callable
 from datetime import date
 from decimal import Decimal
@@ -6,6 +7,8 @@ from urllib.parse import urlencode
 from nicegui import run, ui
 
 from app import texts
+from app.ai_categories.client import CategorisationUnavailableError
+from app.ai_categories.service import AutoCategoriser, find_auto_categoriser
 from app.banking.client import BankApiError, BankSessionExpiredError
 from app.banking.errors import BankErrorCode
 from app.banking.service import BankingService, NotConnectedError, find_banking_service
@@ -133,6 +136,7 @@ def _spending_view(
     band: ui.column,
     store: CategoryStore,
     book: CategoryBook,
+    auto_categoriser: AutoCategoriser | None,
 ) -> None:
     language = shell.language
     dark_mode = shell.dark_mode
@@ -228,7 +232,9 @@ def _spending_view(
         nonlocal spending_filter
         if category_donut is not None:
             category_donut.update(category_slices())
-        settings.update(category_entries(), category_names(), assigned_category)
+        settings.update(
+            category_entries(), category_names(), assigned_category, book.is_ai_assigned
+        )
         revalidated = SpendingFilter.parse(
             spending_filter.counterparty, spending_filter.category_id, counterparties, book
         )
@@ -238,29 +244,37 @@ def _spending_view(
         filters.update_categories(category_options(), spending_filter)
         show_overview()
 
-    async def save_and_show() -> None:
-        await run.io_bound(store.save, book)
+    async def change_and_show(change: Callable[[CategoryBook], None]) -> None:
+        nonlocal book
+
+        def changed(fresh: CategoryBook) -> CategoryBook:
+            change(fresh)
+            return fresh
+
+        book = await run.io_bound(store.update, changed)
         show_categories()
 
     async def change_category(counterparty: str, value: str | None) -> None:
         if value == assigned_category(counterparty):
             return
-        try:
-            if value is None or book.get(value):
+
+        def assign(fresh: CategoryBook) -> None:
+            if value is None or fresh.get(value):
                 category_id = value
             else:
-                existing = book.find_by_name(value)
-                category_id = existing.id if existing else book.create(value).id
+                existing = fresh.find_by_name(value)
+                category_id = existing.id if existing else fresh.create(value).id
+            fresh.assign(counterparty, category_id)
+
+        try:
+            await change_and_show(assign)
         except InvalidCategoryNameError:
             ui.notify(texts.CATEGORY_NAME_LENGTH(language), type="negative")
             show_categories()
-            return
-        book.assign(counterparty, category_id)
-        await save_and_show()
 
     async def rename_category(category_id: str, name: str) -> None:
         try:
-            book.rename(category_id, name)
+            await change_and_show(lambda fresh: fresh.rename(category_id, name))
         except InvalidCategoryNameError:
             ui.notify(texts.CATEGORY_NAME_LENGTH(language), type="negative")
             show_categories()
@@ -268,18 +282,33 @@ def _spending_view(
         except DuplicateCategoryError as error:
             ui.notify(texts.CATEGORY_EXISTS(language, name=error.name), type="negative")
             show_categories()
-            return
-        await save_and_show()
 
     async def delete_category(category_id: str) -> None:
-        book.delete(category_id)
-        await save_and_show()
+        await change_and_show(lambda fresh: fresh.delete(category_id))
+
+    async def categorise_with_ai(categoriser: AutoCategoriser) -> None:
+        nonlocal book
+        try:
+            assigned = await run.io_bound(categoriser.run, payments)
+        except CategorisationUnavailableError:
+            ui.notify(texts.AI_UNAVAILABLE(language), type="negative")
+        else:
+            if assigned:
+                ui.notify(texts.AI_CATEGORISED(language, assigned), type="positive")
+            else:
+                ui.notify(texts.AI_NOTHING_ASSIGNED(language))
+        # A failure part way still keeps the batches answered before it.
+        book = await run.io_bound(store.load)
+        show_categories()
 
     settings = SettingsDialog(
         category_entries(),
         [
             CounterpartyRow(
-                name=share.key, amount=share.amount, category_id=assigned_category(share.key)
+                name=share.key,
+                amount=share.amount,
+                category_id=assigned_category(share.key),
+                ai_assigned=book.is_ai_assigned(share.key),
             )
             for share in all_time_spending_by(payments, currency, counterparty_name)
             if share.key is not None
@@ -289,6 +318,9 @@ def _spending_view(
         rename_category,
         delete_category,
         change_category,
+        None
+        if auto_categoriser is None
+        else functools.partial(categorise_with_ai, auto_categoriser),
         language,
     )
     with shell.actions:
@@ -463,4 +495,5 @@ def register() -> None:
                 band,
                 store,
                 book,
+                find_auto_categoriser(),
             )

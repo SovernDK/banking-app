@@ -5,8 +5,11 @@ import logging
 import sys
 from enum import IntEnum
 
+from app.ai_categories.client import CategorisationUnavailableError
+from app.ai_categories.service import AutoCategoriser, find_auto_categoriser
 from app.banking.client import BankApiError, BankSessionExpiredError
 from app.banking.service import BankingService, NotConnectedError, find_banking_service
+from app.payments import Payment
 from app.rates.client import RatesUnavailableError
 
 logger = logging.getLogger("app.sync")
@@ -20,7 +23,7 @@ class SyncResult(IntEnum):
     NEEDS_RECONNECT = 2
 
 
-def sync(service: BankingService) -> SyncResult:
+def sync(service: BankingService, auto_categoriser: AutoCategoriser | None = None) -> SyncResult:
     result = SyncResult.SYNCED
     try:
         service.refresh(force=True)
@@ -36,9 +39,23 @@ def sync(service: BankingService) -> SyncResult:
     except RatesUnavailableError as error:
         logger.error("Exchange rates not updated: %s", error)
         result = max(result, SyncResult.FAILED)
+    if auto_categoriser is not None:
+        _categorise(auto_categoriser, payments)
     if result is SyncResult.SYNCED:
         logger.info("Synced; %d payments stored in total.", len(payments))
     return result
+
+
+def _categorise(auto_categoriser: AutoCategoriser, payments: list[Payment]) -> None:
+    # Categories are a convenience the user can always set by hand, so a model outage only
+    # logs a warning and leaves the sync result alone.
+    try:
+        assigned = auto_categoriser.run(payments)
+    except CategorisationUnavailableError as error:
+        logger.warning("Categories not assigned: %s", error)
+        return
+    if assigned:
+        logger.info("AI assigned categories to %d counterparties.", assigned)
 
 
 def main() -> int:
@@ -49,7 +66,7 @@ def main() -> int:
     if service is None:
         logger.error("Not synced: Enable Banking credentials are not configured.")
         return SyncResult.FAILED
-    return sync(service)
+    return sync(service, find_auto_categoriser())
 
 
 if __name__ == "__main__":

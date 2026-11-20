@@ -1,9 +1,9 @@
 import itertools
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, TypeVar
 
 from pydantic import BaseModel, Field, StringConstraints, TypeAdapter, ValidationError
 
@@ -11,6 +11,8 @@ from app.json_file import write_atomically
 from app.payments import squash_spaces
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 CATEGORIES_FILENAME = "categories.json"
 
@@ -49,6 +51,9 @@ class CategoryBook(BaseModel):
     rules: dict[str, str] = Field(
         default={}, description="Counterparty name match key to category id."
     )
+    ai_assigned: set[str] = Field(
+        default=set(), description="Match keys whose rule an AI model chose, not the user."
+    )
 
     def get(self, category_id: str) -> Category | None:
         return next((category for category in self.categories if category.id == category_id), None)
@@ -84,15 +89,32 @@ class CategoryBook(BaseModel):
         self.rules = {
             key: assigned for key, assigned in self.rules.items() if assigned != category_id
         }
+        self.ai_assigned &= self.rules.keys()
 
     def assign(self, counterparty: str, category_id: str | None) -> None:
         key = _match_key(counterparty)
+        self.ai_assigned.discard(key)
         if category_id is None:
             self.rules.pop(key, None)
             return
         category = self._require(category_id)
         self.rules[key] = category_id
         self._give_colour(category)
+
+    def assign_suggested(self, counterparty: str, category_id: str) -> bool:
+        """Applies an AI model's choice unless the name already has a category; tells whether
+        it did."""
+        key = _match_key(counterparty)
+        if key in self.rules:
+            return False
+        category = self._require(category_id)
+        self.rules[key] = category_id
+        self.ai_assigned.add(key)
+        self._give_colour(category)
+        return True
+
+    def is_ai_assigned(self, counterparty: str) -> bool:
+        return _match_key(counterparty) in self.ai_assigned
 
     def category_of(self, counterparty: str | None) -> Category | None:
         if counterparty is None:
@@ -138,3 +160,12 @@ class CategoryStore:
 
     def save(self, book: CategoryBook) -> None:
         write_atomically(self._path, book.model_dump_json())
+
+    def update(self, change: Callable[[CategoryBook], T]) -> T:
+        """Applies `change` to the stored book, saves it and returns what `change` returned.
+        The dashboard and the daily sync both write categories, so a change starts from the
+        file, never from a stale copy."""
+        book = self.load()
+        result = change(book)
+        self.save(book)
+        return result

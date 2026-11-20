@@ -5,7 +5,7 @@ from typing import Literal
 from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
-from pydantic import Field, HttpUrl, field_validator
+from pydantic import Field, HttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.categories import CategoryName
@@ -15,6 +15,7 @@ from app.payments import CurrencyCode
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 EnableBankingEnvironment = Literal["sandbox", "production"]
+Thinking = Literal["off", "low", "medium", "high"]
 
 
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1"}
@@ -118,6 +119,31 @@ class Settings(BaseSettings):
         "Health",
         "Entertainment",
     ]
+    ollama_api_url: HttpUrl = HttpUrl("https://ollama.com")
+    ai_category_model: str = Field(
+        default="gpt-oss:120b",
+        min_length=1,
+        max_length=200,
+        description="Ollama model that picks categories; it must read Polish payment names.",
+    )
+    ai_category_thinking: Thinking = Field(
+        default="low",
+        description="Reasoning effort; picking a category is simple, so little thinking is needed."
+        " Use off for models that cannot think.",
+    )
+    ai_category_timeout_seconds: float = Field(default=120, gt=0)
+    ai_category_batch_size: int = Field(
+        default=50, ge=1, le=200, description="Counterparties sent to the model per request."
+    )
+    ai_category_examples: int = Field(
+        default=100,
+        ge=0,
+        le=500,
+        description="Categories the user chose, shown to the model as examples to follow.",
+    )
+    ai_category_titles_per_name: int = Field(
+        default=3, ge=0, le=10, description="Payment titles sent with each counterparty name."
+    )
 
     enable_banking_app_id: str | None = Field(
         default=None, min_length=1, validation_alias="ENABLE_BANKING_APP_ID"
@@ -130,6 +156,13 @@ class Settings(BaseSettings):
     )
     enable_banking_sandbox_key_path: Path | None = Field(
         default=None, validation_alias="ENABLE_BANKING_SANDBOX_KEY_PATH"
+    )
+
+    ollama_api_key: SecretStr | None = Field(
+        default=None,
+        min_length=1,
+        validation_alias="OLLAMA_API_KEY",
+        description="Ollama Cloud key; without one, categories are only assigned by hand.",
     )
 
     @field_validator("public_url")

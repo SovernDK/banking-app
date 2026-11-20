@@ -31,8 +31,10 @@ class SettingsDialog:
         on_rename: Callable[[str, str], Awaitable[None]],
         on_delete: Callable[[str], Awaitable[None]],
         on_assign: Callable[[str, str | None], Awaitable[None]],
+        on_categorise_with_ai: Callable[[], Awaitable[None]] | None,
         language: Language,
     ) -> None:
+        """Without `on_categorise_with_ai`, the dialog says how to turn AI categories on."""
         with (
             ui.dialog() as self._dialog,
             ui.card()
@@ -52,6 +54,7 @@ class SettingsDialog:
                 ui.column().classes("w-full gap-1"),
             ):
                 ui.label(texts.PICK_CATEGORY_HINT(language)).classes("text-xs text-muted")
+                _ai_action(on_categorise_with_ai, language)
                 self._counterparties = CounterpartiesTable(
                     counterparties, category_names, currency, on_assign, language
                 )
@@ -66,9 +69,30 @@ class SettingsDialog:
         categories: list[CategoryEntry],
         category_names: dict[str, str],
         category_of: Callable[[str], str | None],
+        is_ai_assigned: Callable[[str], bool],
     ) -> None:
         self._categories.update(categories)
-        self._counterparties.update(category_names, category_of)
+        self._counterparties.update(category_names, category_of, is_ai_assigned)
+
+
+def _ai_action(on_click: Callable[[], Awaitable[None]] | None, language: Language) -> None:
+    if on_click is None:
+        ui.label(texts.AI_NOT_CONFIGURED(language)).classes("text-xs text-muted")
+        return
+
+    async def categorise() -> None:
+        button.props("loading")
+        try:
+            await on_click()
+        finally:
+            button.props(remove="loading")
+
+    button = ghost_button(
+        texts.CATEGORISE_WITH_AI(language),
+        categorise,
+        icon="auto_awesome",
+        testid="categorise-with-ai",
+    )
 
 
 def settings_button(on_click: Callable[[], None], language: Language) -> ui.button:

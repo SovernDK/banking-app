@@ -108,6 +108,14 @@ def fake_rates_url(servers: list[subprocess.Popen[bytes]]) -> str:
 
 
 @pytest.fixture(scope="session")
+def fake_ollama_url(servers: list[subprocess.Popen[bytes]]) -> str:
+    origin = loopback_origin(free_port())
+    fake_app = "tests.fakes.ollama:create_fake_ollama"
+    servers.append(_serve(fake_app, origin, "/docs", {}, "--factory"))
+    return origin
+
+
+@pytest.fixture(scope="session")
 def test_key_file(tmp_path_factory: pytest.TempPathFactory) -> Path:
     path = tmp_path_factory.mktemp("keys") / "key.pem"
     write_private_key(generate_private_key(), path)
@@ -124,6 +132,7 @@ def base_url(
     serve_app: AppServer,
     fake_bank_url: str,
     fake_rates_url: str,
+    fake_ollama_url: str,
     test_key_file: Path,
     app_data_dir: Path,
 ) -> str:
@@ -136,6 +145,8 @@ def base_url(
             "YIJI_ENABLE_BANKING_ENVIRONMENT": "sandbox",
             "YIJI_ENABLE_BANKING_API_URL": fake_bank_url,
             "YIJI_EXCHANGE_RATES_API_URL": fake_rates_url,
+            "YIJI_OLLAMA_API_URL": fake_ollama_url,
+            "OLLAMA_API_KEY": "e2e-ollama-key",
             "YIJI_ENABLE_BANKING_SANDBOX_REDIRECT_URL": f"{url}/callback",
             "ENABLE_BANKING_SANDBOX_ID": "e2e-sandbox-app",
             "ENABLE_BANKING_SANDBOX_KEY_PATH": str(test_key_file),
@@ -149,6 +160,17 @@ def fake_rates(fake_rates_url: str) -> Callable[..., None]:
 
     def configure(**config: Any) -> None:
         httpx2.post(f"{fake_rates_url}/_fake/configure", json=config).raise_for_status()
+
+    configure()
+    return configure
+
+
+@pytest.fixture
+def fake_ollama(fake_ollama_url: str) -> Callable[..., None]:
+    """Resets the fake Ollama model; call it to set its answers."""
+
+    def configure(**config: Any) -> None:
+        httpx2.post(f"{fake_ollama_url}/_fake/configure", json=config).raise_for_status()
 
     configure()
     return configure

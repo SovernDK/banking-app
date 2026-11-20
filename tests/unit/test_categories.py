@@ -134,3 +134,67 @@ def test_unreadable_category_file_starts_empty(tmp_path: Path) -> None:
     path.write_text("{not json")
 
     assert CategoryStore(path, ["Groceries"]).load() == CategoryBook()
+
+
+def test_ai_choice_fills_only_names_the_user_left_uncategorised() -> None:
+    book = CategoryBook()
+    groceries = book.create("Groceries")
+    eating_out = book.create("Eating out")
+    book.assign("Biedronka", groceries.id)
+
+    assert not book.assign_suggested("BIEDRONKA", eating_out.id)
+    assert book.assign_suggested("Żabka", groceries.id)
+
+    assert book.category_of("Biedronka") == groceries
+    assert not book.is_ai_assigned("Biedronka")
+    assert book.category_of("żabka") == groceries
+    assert book.is_ai_assigned("żabka")
+    assert groceries.colour_slot is not None
+
+
+def test_user_correcting_an_ai_choice_makes_it_their_own() -> None:
+    book = CategoryBook()
+    groceries = book.create("Groceries")
+    eating_out = book.create("Eating out")
+    book.assign_suggested("Żabka", groceries.id)
+
+    book.assign("Żabka", eating_out.id)
+
+    assert book.category_of("Żabka") == eating_out
+    assert not book.is_ai_assigned("Żabka")
+
+
+def test_deleting_a_category_forgets_its_ai_choices() -> None:
+    book = CategoryBook()
+    groceries = book.create("Groceries")
+    book.assign_suggested("Żabka", groceries.id)
+
+    book.delete(groceries.id)
+
+    assert not book.is_ai_assigned("Żabka")
+
+
+def test_category_file_from_before_ai_choices_still_loads(tmp_path: Path) -> None:
+    path = tmp_path / CATEGORIES_FILENAME
+    path.write_text(
+        '{"categories": [{"id": "g", "name": "Groceries", "colour_slot": 0}],'
+        ' "rules": {"biedronka": "g"}}'
+    )
+
+    book = CategoryStore(path, []).load()
+
+    assert book.category_of("Biedronka") == book.get("g")
+    assert not book.is_ai_assigned("Biedronka")
+
+
+def test_store_update_starts_from_the_saved_book_and_keeps_both_changes(tmp_path: Path) -> None:
+    store = CategoryStore(tmp_path / CATEGORIES_FILENAME, ["Groceries"])
+    stale = store.load()
+    groceries_id = stale.categories[0].id
+    store.update(lambda book: book.assign_suggested("Żabka", groceries_id))
+
+    store.update(lambda book: book.assign("Biedronka", groceries_id))
+
+    saved = store.load()
+    assert saved.is_ai_assigned("Żabka")
+    assert saved.category_of("Biedronka") is not None

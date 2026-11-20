@@ -51,6 +51,10 @@ flowchart LR
   BK[python -m app.backup<br/>after each sync] --> HS
   N --> CAT[categories.py<br/>CategoryBook + rules]
   CAT --> CS[(CategoryStore<br/>.yiji/categories.json)]
+  N --> AC[AutoCategoriser<br/>app/ai_categories]
+  SY --> AC
+  AC --> CS
+  AC --> OL[(Ollama Cloud<br/>ollama.com/api/chat)]
   SV --> CL[EnableBankingClient<br/>JWT RS256, httpx2]
   SV --> ST[(BankStore<br/>.yiji/bank.json)]
   CL --> E[(api.enablebanking.com<br/>sandbox or production app)]
@@ -118,6 +122,33 @@ flowchart LR
 </section>
 
 <section>
+<h2>AI categories</h2>
+<pre class="mermaid">
+sequenceDiagram
+  participant T as Daily sync / ⚙ "Categorise with AI"
+  participant A as AutoCategoriser
+  participant C as categories.json
+  participant O as Ollama (YIJI_AI_CATEGORY_MODEL)
+  T->>A: run(stored payments)
+  A->>C: load: names with no rule, user's own rules
+  loop batches of YIJI_AI_CATEGORY_BATCH_SIZE names
+    A->>O: POST /api/chat · categories, examples (user's rules), id + name + ≤3 titles + method per counterparty
+    O-->>A: {"1": "Groceries", "2": null} (a ```json fence is accepted)
+    A->>C: update (load → assign_suggested → save): only names still without a rule, marked AI
+  end
+  A-->>T: count assigned
+</pre>
+<ul>
+<li><b>On only with a key:</b> <code>OLLAMA_API_KEY</code> (ollama.com/settings/keys). No local Ollama app needed; without a key Settings shows how to enable it.</li>
+<li><b>User wins:</b> AI never overwrites a rule; rows it chose show an <b>AI</b> badge; picking a category by hand removes the badge and makes the rule the user's (it then serves as an example).</li>
+<li><b>Safe answers:</b> the model answers by id because it copies long company names inexactly; Ollama Cloud ignores the <code>format</code> schema, so the prompt spells out the shape. Ids not asked about and categories not in the list are dropped; null = left Uncategorised. Each batch is saved as answered, so an outage keeps earlier batches.</li>
+<li><b>Failures:</b> sync logs <code>Categories not assigned: …</code> and keeps its exit code; the button shows "AI is unavailable right now".</li>
+<li><b>Sent to Ollama:</b> counterparty names, up to <code>YIJI_AI_CATEGORY_TITLES_PER_NAME</code> payment titles, payment method, category names. Never amounts, dates or account ids.</li>
+<li><b>Concurrent writes:</b> the dashboard and the sync both change categories through <code>CategoryStore.update</code>, which starts from the file, so neither overwrites the other.</li>
+</ul>
+</section>
+
+<section>
 <h2>Spending history, exchange rates, daily sync</h2>
 <pre class="mermaid">
 flowchart LR
@@ -145,7 +176,7 @@ flowchart LR
 <li><b>Choose currency:</b> toggle next to Compare (<code>YIJI_DISPLAY_CURRENCIES</code> + any currency in the history); choice in <code>?currency=</code> (left out for the default); changing it reloads the page.</li>
 </ul>
 <h3>Daily sync and backup</h3>
-<pre>uv run python -m app.sync     # exit 0 synced · 1 bank/rates error or not configured · 2 reconnect needed
+<pre>uv run python -m app.sync     # exit 0 synced · 1 bank/rates error or not configured · 2 reconnect needed; then AI categories if OLLAMA_API_KEY is set
 uv run python -m app.backup   # yiji.sqlite3 (SQLite backup API) + categories.json → YIJI_BACKUP_DIR/yiji-YYYY-MM-DD, keeps YIJI_BACKUP_KEEP</pre>
 <p>On the server both run from <code>deploy/systemd/yiji-sync.service</code> (see Server). Timer: every day at 00:00, <code>Persistent=true</code> catches up a run missed while the server was off. Each sync fetches from the last sync − <code>YIJI_SYNC_OVERLAP_DAYS</code>. The backup runs even when the sync fails; the unit keeps the sync's exit code.</p>
 </section>
@@ -224,7 +255,8 @@ app/
   spending.py        Period, Comparison (M2M/Y2Y shift), history_start, change, daily spending, spending_by / all_time_spending_by / top_shares / merge_spellings (pure)
   payment_methods.py PaymentMethod enum
   bank_profiles/     Per-bank mapping of transaction JSON → Payment: generic (ISO codes), mock_aspsp, pekao; profile_for()
-  categories.py      Category, CategoryBook (rules by counterparty name), CategoryStore
+  categories.py      Category, CategoryBook (rules by counterparty name, AI-assigned marks), CategoryStore (load/save/update)
+  ai_categories/     OllamaCategoriser (chat API, answers by id), AutoCategoriser (batches, saves), find_auto_categoriser
   spending_filter.py SpendingFilter (one counterparty or category; parse from URL), counterparty_names
   json_file.py       Atomic JSON write shared by the stores
   ui/
@@ -242,7 +274,7 @@ deploy/systemd/      yiji-sync.service (sync + backup via compose) + .timer (dai
 site/                Static pages (callback relay, privacy, terms), published to public repo yiji-site
 scripts/             publish-site.sh: copy site/ to the Pages repo
 tests/
-  fakes/             Fake Enable Banking + Frankfurter APIs (unit via TestClient, E2E via uvicorn); payment builder
+  fakes/             Fake Enable Banking + Frankfurter + Ollama APIs (unit via TestClient, E2E via uvicorn); payment builder
   unit/              pytest
   e2e/               Playwright; conftest starts app + fake bank; pages/ = page objects
 docs/wiki.html       this page
@@ -333,6 +365,14 @@ flowchart LR
 <tr><td><code>YIJI_EXCHANGE_RATE_LOOKBACK_DAYS</code></td><td>7</td><td>Oldest rate a payment may use (weekends, holidays), 1–31</td></tr>
 <tr><td><code>YIJI_TRANSACTIONS_FALLBACK_HISTORY_DAYS</code></td><td>90</td><td>History asked for when the bank refuses 13 months (min 30)</td></tr>
 <tr><td><code>YIJI_STARTER_CATEGORIES</code></td><td>Groceries, Eating out, Transport, Housing, Shopping, Health, Entertainment</td><td>JSON list seeded once when no categories file exists; names 1–40 chars</td></tr>
+<tr><td><code>OLLAMA_API_KEY</code></td><td>—</td><td>Ollama Cloud key; turns on AI categories (sync + Settings button)</td></tr>
+<tr><td><code>YIJI_OLLAMA_API_URL</code></td><td>https://ollama.com</td><td>Ollama chat API origin (a local Ollama works too; E2E points it at the fake)</td></tr>
+<tr><td><code>YIJI_AI_CATEGORY_MODEL</code></td><td>gpt-oss:120b</td><td>Model that picks categories; must handle Polish</td></tr>
+<tr><td><code>YIJI_AI_CATEGORY_THINKING</code></td><td>low</td><td>off · low · medium · high; use off for models that cannot think</td></tr>
+<tr><td><code>YIJI_AI_CATEGORY_TIMEOUT_SECONDS</code></td><td>120</td><td>HTTP timeout per batch</td></tr>
+<tr><td><code>YIJI_AI_CATEGORY_BATCH_SIZE</code></td><td>50</td><td>Names per request, 1–200</td></tr>
+<tr><td><code>YIJI_AI_CATEGORY_EXAMPLES</code></td><td>100</td><td>User's own rules sent as examples, 0–500</td></tr>
+<tr><td><code>YIJI_AI_CATEGORY_TITLES_PER_NAME</code></td><td>3</td><td>Payment titles sent per name, 0–10</td></tr>
 <tr><td><code>ENABLE_BANKING_APP_ID</code></td><td>—</td><td>Enable Banking application ID (production)</td></tr>
 <tr><td><code>ENABLE_BANKING_KEY_PATH</code></td><td>—</td><td>Private key file; relative paths resolve from the project root; must be an unencrypted RSA PEM key (checked at startup)</td></tr>
 <tr><td><code>ENABLE_BANKING_SANDBOX_ID</code></td><td>—</td><td>Enable Banking application ID (sandbox)</td></tr>
