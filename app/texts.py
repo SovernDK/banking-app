@@ -89,6 +89,11 @@ SPENDING_PER_DAY_VS = Text(
     en="Spending per day vs {ago}",
     ja="1日あたりの支出（{ago}と比較）",
 )
+CONVERTED_COMPARISON = Text(
+    pl="Przeliczono po kursie z każdego dnia, więc porównanie obejmuje zmiany kursów walut.",
+    en="Converted at each day's rate, so the comparison includes exchange-rate changes.",
+    ja="各日のレートで換算しているため、比較には為替レートの変動が含まれます。",
+)
 THIS_PERIOD = Text(pl="Ten okres", en="This period", ja="今期")
 
 CURRENCY = Text(pl="Waluta", en="Currency", ja="通貨")

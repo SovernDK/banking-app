@@ -125,6 +125,7 @@ def _currency_options(settings: Settings, payments: list[Payment]) -> list[str]:
 def _spending_view(
     payments: list[Payment],
     currency: str,
+    converted: bool,
     currencies: list[str],
     default_currency: str,
     today: date,
@@ -193,7 +194,9 @@ def _spending_view(
     @ui.refreshable
     def overview() -> None:
         nonlocal spending_overview
-        spending_overview = SpendingOverview(currency, language, dark=bool(dark_mode.value))
+        spending_overview = SpendingOverview(
+            currency, language, converted=converted, dark=bool(dark_mode.value)
+        )
         show_overview()
 
     def category_options() -> list[CategoryOption]:
@@ -484,6 +487,7 @@ def register() -> None:
             _spending_view(
                 converted,
                 shown_currency,
+                any(payment.currency != shown_currency for payment in payments),
                 currencies,
                 default_currency,
                 service.today(),

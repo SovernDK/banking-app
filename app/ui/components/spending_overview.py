@@ -55,12 +55,15 @@ def _amounts(days: list[DailySpending]) -> list[float]:
 class SpendingOverview:
     """Period total and spending-per-day bars beside the compared days (hatched). `show` redraws
     them in place, and the chart box keeps its height when empty, so a redraw never moves the
-    page."""
+    page. `converted` says some amounts came from another currency at their own day's rate."""
 
-    def __init__(self, currency: str, language: Language, *, dark: bool) -> None:
+    def __init__(self, currency: str, language: Language, *, converted: bool, dark: bool) -> None:
         self._currency = currency
         self._language = language
-        self._total = KpiTile(testid="total")
+        self._total = KpiTile(
+            testid="total",
+            note=texts.CONVERTED_COMPARISON(language) if converted else None,
+        )
         with (
             section(texts.SPENDING_PER_DAY(language), currency) as self._title,
             ui.column().classes("w-full h-72 justify-center"),

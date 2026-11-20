@@ -170,6 +170,10 @@ class DashboardPage:
         return self.page.get_by_test_id("total-delta")
 
     @property
+    def total_note(self) -> Locator:
+        return self.page.get_by_test_id("total-note")
+
+    @property
     def currency_filter(self) -> Locator:
         return self.page.get_by_test_id("currency-filter")
 

@@ -18,11 +18,15 @@ TODAY = date.today()
 def open_dashboard(
     page: Page, fake_bank: Callable[..., None], fake_rates: Callable[..., None]
 ) -> Callable[..., DashboardPage]:
-    """Connects a bank that spent 40 PLN and 10 EUR today, with 4 PLN to the euro unless the
-    rates are given."""
+    """Connects a bank that spent 40 PLN and 10 EUR today unless the transactions are given,
+    with 4 PLN to the euro unless the rates are given."""
 
-    def open_with(query: str = "", **rates: object) -> DashboardPage:
-        fake_bank(transactions=[debit("40", TODAY, currency="PLN"), debit("10", TODAY)])
+    def open_with(
+        query: str = "", transactions: list[dict[str, object]] | None = None, **rates: object
+    ) -> DashboardPage:
+        fake_bank(
+            transactions=transactions or [debit("40", TODAY, currency="PLN"), debit("10", TODAY)]
+        )
         fake_rates(**(rates or {"rates": daily(TODAY - timedelta(days=10), TODAY, PLN="4")}))
         dashboard = DashboardPage(page)
         dashboard.open()
@@ -83,3 +87,27 @@ def test_rates_outage_warns_and_still_shows_spending(
 
     expect(dashboard.total).to_have_text("40.00 PLN")
     expect(dashboard.rates_warning.first).to_contain_text("could not be updated")
+
+
+def test_converted_totals_note_that_the_comparison_includes_exchange_rate_changes(
+    open_dashboard: Callable[..., DashboardPage],
+) -> None:
+    dashboard = open_dashboard()
+
+    expect(dashboard.total_note).to_have_text(
+        "Converted at each day's rate, so the comparison includes exchange-rate changes."
+    )
+
+
+def test_totals_in_their_own_currency_carry_no_exchange_rate_note(
+    open_dashboard: Callable[..., DashboardPage],
+) -> None:
+    dashboard = open_dashboard(transactions=[debit("40", TODAY, currency="PLN")])
+
+    expect(dashboard.total).to_have_text("40.00 PLN")
+    expect(dashboard.total_note).to_be_hidden()
+
+    dashboard.select_currency("EUR")
+
+    expect(dashboard.total).to_have_text("10.00 EUR")
+    expect(dashboard.total_note).to_be_visible()

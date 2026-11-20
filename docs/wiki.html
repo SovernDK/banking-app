@@ -174,6 +174,7 @@ flowchart LR
 <li><b>Bank connection gone:</b> the dashboard keeps showing stored history with the alert and Connect button above it.</li>
 <li><b>Rates:</b> ECB reference rates (EUR base, cross rates through EUR). Earlier days are fetched once; today is re-checked after the refresh window. A rates outage shows a warning and keeps older rates.</li>
 <li><b>Choose currency:</b> toggle next to Compare (<code>YIJI_DISPLAY_CURRENCIES</code> + any currency in the history); choice in <code>?currency=</code> (left out for the default); changing it reloads the page.</li>
+<li><b>Comparison across rates:</b> each period uses its own days' rates, so in a converted view the % change includes exchange-rate moves. When any shown amount was converted, a muted note under the total says so (<code>KpiTile</code> note, <code>total-note</code>).</li>
 </ul>
 <h3>Daily sync and backup</h3>
 <pre>uv run python -m app.sync     # exit 0 synced · 1 bank/rates error or not configured · 2 reconnect needed; then AI categories if OLLAMA_API_KEY is set
