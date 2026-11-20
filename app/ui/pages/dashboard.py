@@ -7,9 +7,9 @@ from nicegui import run, ui
 from app import texts
 from app.ai_categories.client import CategorisationUnavailableError
 from app.ai_categories.service import AutoCategoriser, find_auto_categoriser
-from app.banking.client import BankApiError, BankSessionExpiredError
+from app.banking.client import BankApiError
 from app.banking.errors import BankErrorCode
-from app.banking.service import BankingService, NotConnectedError, find_banking_service
+from app.banking.service import BankingService, find_banking_service
 from app.categories import (
     CATEGORIES_FILENAME,
     CategoryBook,
@@ -19,8 +19,7 @@ from app.categories import (
 )
 from app.config import get_settings
 from app.i18n import Language
-from app.payments import Payment
-from app.rates.client import RatesUnavailableError
+from app.refresh import BankStatus, Refreshed, refresh
 from app.spending import Comparison, Period
 from app.spending_view import (
     UNCATEGORISED,
@@ -324,39 +323,31 @@ def _spending_view(
     dark_mode.on_value_change(redraw)
 
 
-async def _payments_or_connect(
-    service: BankingService, language: Language
-) -> tuple[list[Payment], bool]:
-    """Brings the stored payments up to date when the bank allows; when it doesn't, says why and
-    keeps showing what was stored before. Also tells whether the bank needs connecting."""
-    needs_connection = False
-    try:
-        await run.io_bound(service.refresh)
-    except NotConnectedError:
-        needs_connection = True
-    except BankSessionExpiredError:
+def _show_connection(
+    refreshed: Refreshed, service: BankingService, warning_days: int, language: Language
+) -> bool:
+    """Says why the bank could not be asked and offers to connect it, or counts down to the end
+    of the connection. Tells whether the bank needs connecting."""
+    if refreshed.bank is BankStatus.SESSION_EXPIRED:
         alert(texts.BANK_ERRORS[BankErrorCode.SESSION_EXPIRED](language))
-        needs_connection = True
-    except BankApiError:
+    elif refreshed.bank is BankStatus.BANK_UNAVAILABLE:
         alert(texts.BANK_ERRORS[BankErrorCode.BANK_UNAVAILABLE](language))
-    payments = await run.io_bound(service.payments)
-    if needs_connection and not payments:
+    needs_connection = refreshed.bank in (BankStatus.NOT_CONNECTED, BankStatus.SESSION_EXPIRED)
+    if needs_connection and not refreshed.payments:
         empty_state(texts.NO_TRANSACTIONS(language))
     if needs_connection:
         primary_button(
             texts.CONNECT_BANK(language), _connector(service, language), testid="connect-bank"
         )
-    else:
-        ends_on = await run.io_bound(service.connection_ends_on)
-        if ends_on is not None:
-            reconnect_notice(
-                ends_on,
-                get_settings().reconnect_warning_days,
-                language,
-                service.today,
-                _connector(service, language),
-            )
-    return payments, needs_connection
+    elif refreshed.connection_ends_on is not None:
+        reconnect_notice(
+            refreshed.connection_ends_on,
+            warning_days,
+            language,
+            service.today,
+            _connector(service, language),
+        )
+    return needs_connection
 
 
 def register() -> None:
@@ -386,23 +377,23 @@ def register() -> None:
                     return
                 if error:
                     alert(texts.BANK_ERRORS[error](language))
-                payments, needs_connection = await _payments_or_connect(service, language)
-                if not payments:
+                refreshed = await run.io_bound(refresh, service)
+                needs_connection = _show_connection(
+                    refreshed, service, settings.reconnect_warning_days, language
+                )
+                if not refreshed.payments:
                     if not needs_connection:
                         empty_state(texts.NO_RECENT_SPENDING(language))
                     return
-                try:
-                    await run.io_bound(service.refresh_rates, payments)
-                except RatesUnavailableError:
+                if refreshed.rates_error is not None:
                     alert(texts.RATES_UNAVAILABLE(language), testid="rates-error")
-                rates = await run.io_bound(service.exchange_rates)
                 store = CategoryStore(
                     settings.data_dir / CATEGORIES_FILENAME, settings.starter_categories
                 )
                 book = await run.io_bound(store.load)
                 view = SpendingView(
-                    payments,
-                    rates,
+                    refreshed.payments,
+                    refreshed.rates,
                     display_currencies=settings.display_currencies,
                     requested_currency=currency,
                     book=book,

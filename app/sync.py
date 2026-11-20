@@ -7,10 +7,9 @@ from enum import IntEnum
 
 from app.ai_categories.client import CategorisationUnavailableError
 from app.ai_categories.service import AutoCategoriser, find_auto_categoriser
-from app.banking.client import BankApiError, BankSessionExpiredError
-from app.banking.service import BankingService, NotConnectedError, find_banking_service
+from app.banking.service import BankingService, find_banking_service
 from app.payments import Payment
-from app.rates.client import RatesUnavailableError
+from app.refresh import BankStatus, refresh
 
 logger = logging.getLogger("app.sync")
 
@@ -24,25 +23,21 @@ class SyncResult(IntEnum):
 
 
 def sync(service: BankingService, auto_categoriser: AutoCategoriser | None = None) -> SyncResult:
+    refreshed = refresh(service, force=True)
     result = SyncResult.SYNCED
-    try:
-        service.refresh(force=True)
-    except (NotConnectedError, BankSessionExpiredError):
+    if refreshed.bank in (BankStatus.NOT_CONNECTED, BankStatus.SESSION_EXPIRED):
         logger.error("Not synced: the bank connection is missing or expired; reconnect in Yiji.")
         result = SyncResult.NEEDS_RECONNECT
-    except BankApiError as error:
-        logger.error("Not synced: %s", error)
+    elif refreshed.bank is BankStatus.BANK_UNAVAILABLE:
+        logger.error("Not synced: %s", refreshed.bank_error)
         result = SyncResult.FAILED
-    payments = service.payments()
-    try:
-        service.refresh_rates(payments)
-    except RatesUnavailableError as error:
-        logger.error("Exchange rates not updated: %s", error)
+    if refreshed.rates_error is not None:
+        logger.error("Exchange rates not updated: %s", refreshed.rates_error)
         result = max(result, SyncResult.FAILED)
     if auto_categoriser is not None:
-        _categorise(auto_categoriser, payments)
+        _categorise(auto_categoriser, refreshed.payments)
     if result is SyncResult.SYNCED:
-        logger.info("Synced; %d payments stored in total.", len(payments))
+        logger.info("Synced; %d payments stored in total.", len(refreshed.payments))
     return result
 
 
