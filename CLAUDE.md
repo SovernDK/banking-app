@@ -44,7 +44,6 @@ uv run pytest -m e2e                             # end-to-end tests (first: uv r
 - **Always load the `writing-tests` skill before writing or changing unit tests** and follow it.
 - Every new feature or bug fix comes with unit tests; a bug fix starts with a failing test that reproduces it.
 - Unit tests live in `tests/unit`.
-- Run `uv run pytest` before declaring a task done.
 
 ### E2E tests
 - Framework: Playwright (pytest-playwright), located in `tests/e2e`.
@@ -81,7 +80,6 @@ uv run pytest -m e2e                             # end-to-end tests (first: uv r
   - **Diagnostics:** fetch errors/warnings from the language server after every change and fix them before finishing.
   - **Navigation:** go to definition, find references, find implementations.
 - Fall back to manual edits only when no MCP tool covers the operation.
-- A task is not done while the MCP diagnostics report errors in files you touched.
 
 ## Code conventions
 
@@ -98,8 +96,8 @@ uv run pytest -m e2e                             # end-to-end tests (first: uv r
 
 ## Definition of done
 
-- [ ] Lint, type check and all tests pass
-- [ ] No diagnostics errors in touched files (VS Code MCP)
+Lint, format, type check, unit and e2e tests are run by the Stop hook (`.claude/hooks/run-checks.py`), which blocks finishing until they pass.
+
 - [ ] New/changed logic covered by unit tests; user flows covered by E2E where relevant
 - [ ] No unnecessary comments, no dead code
 - [ ] Summary lists any new dependencies and open questions
