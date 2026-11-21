@@ -45,7 +45,7 @@ uv run pytest -m e2e -n auto                     # end-to-end tests (first: uv r
 
 ## BUG Fixing
 
-- Fix the root cause of a bug, not its symptom: a workaround leaves the defect in place for the next caller.
+- IMPORTANT: Fix the root cause of a bug, not its symptom: a workaround leaves the defect in place for the next caller.
 
 ## UI and design
 
