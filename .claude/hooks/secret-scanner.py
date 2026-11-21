@@ -55,7 +55,11 @@ SECRET_PATTERNS = [
     # Databricks Personal Access Tokens
     (r"dapi[0-9a-f]{32}", "Databricks Access Token", "high"),
     # Azure Keys
-    (r'(?i)azure[_\-\s]*(?:key|secret|token)[\'"\s]*[=:][\'"\s]*[A-Za-z0-9+/=]{32,}', "Azure Key", "high"),
+    (
+        r'(?i)azure[_\-\s]*(?:key|secret|token)[\'"\s]*[=:][\'"\s]*[A-Za-z0-9+/=]{32,}',
+        "Azure Key",
+        "high",
+    ),
     # Cloudflare API Tokens
     (r"(?:cf|cloudflare)[_\-]?[A-Za-z0-9_\-]{37,}", "Cloudflare API Token", "medium"),
     # DigitalOcean Tokens
@@ -73,7 +77,11 @@ SECRET_PATTERNS = [
     # PyPI API Tokens
     (r"pypi-[A-Za-z0-9\-_]{16,}", "PyPI API Token", "high"),
     # Generic API Keys
-    (r'(?i)(api[_\-\s]*key|apikey)[\'"\s]*[=:][\'"\s]*[\'"][0-9a-zA-Z\-_]{20,}[\'"]', "Generic API Key", "medium"),
+    (
+        r'(?i)(api[_\-\s]*key|apikey)[\'"\s]*[=:][\'"\s]*[\'"][0-9a-zA-Z\-_]{20,}[\'"]',
+        "Generic API Key",
+        "medium",
+    ),
     (
         r'(?i)(secret[_\-\s]*key|secretkey)[\'"\s]*[=:][\'"\s]*[\'"][0-9a-zA-Z\-_]{20,}[\'"]',
         "Generic Secret Key",
@@ -91,8 +99,16 @@ SECRET_PATTERNS = [
     (r"-----BEGIN (RSA |DSA |EC )?PRIVATE KEY-----", "Private Key", "critical"),
     (r"-----BEGIN OPENSSH PRIVATE KEY-----", "OpenSSH Private Key", "critical"),
     # Database Connection Strings
-    (r'(?i)(mysql|postgresql|postgres|mongodb)://[^\s\'"\)]+:[^\s\'"\)]+@', "Database Connection String", "high"),
-    (r"(?i)Server=[^;]+;Database=[^;]+;User Id=[^;]+;Password=[^;]+", "SQL Server Connection String", "high"),
+    (
+        r'(?i)(mysql|postgresql|postgres|mongodb)://[^\s\'"\)]+:[^\s\'"\)]+@',
+        "Database Connection String",
+        "high",
+    ),
+    (
+        r"(?i)Server=[^;]+;Database=[^;]+;User Id=[^;]+;Password=[^;]+",
+        "SQL Server Connection String",
+        "high",
+    ),
     # JWT Tokens
     (r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}", "JWT Token", "medium"),
     # Slack Tokens
@@ -177,7 +193,10 @@ def get_staged_files():
     """Get list of staged files"""
     try:
         result = subprocess.run(
-            ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"], capture_output=True, text=True, check=True
+            ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],
+            capture_output=True,
+            text=True,
+            check=True,
         )
         return [f.strip() for f in result.stdout.split("\n") if f.strip()]
     except subprocess.CalledProcessError:
@@ -205,7 +224,9 @@ def scan_file(file_path):
                     # Skip if it looks like a comment or example
                     line_stripped = line.strip()
                     is_comment = line_stripped.startswith(("#", "//"))
-                    if is_comment and ("example" in line_stripped.lower() or "placeholder" in line_stripped.lower()):
+                    if is_comment and (
+                        "example" in line_stripped.lower() or "placeholder" in line_stripped.lower()
+                    ):
                         continue
 
                     findings.append(
@@ -214,7 +235,9 @@ def scan_file(file_path):
                             "line": line_num,
                             "description": description,
                             "severity": severity,
-                            "match": match.group(0)[:50] + "..." if len(match.group(0)) > 50 else match.group(0),
+                            "match": match.group(0)[:50] + "..."
+                            if len(match.group(0)) > 50
+                            else match.group(0),
                             "full_line": line.strip()[:100],
                         }
                     )
@@ -251,7 +274,9 @@ def print_findings(findings):
     print(file=sys.stderr)
 
     for finding in findings:
-        severity_emoji = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🔵"}.get(finding["severity"], "⚪")
+        severity_emoji = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🔵"}.get(
+            finding["severity"], "⚪"
+        )
 
         print(f"{severity_emoji} {finding['description']}", file=sys.stderr)
         print(f"   File: {finding['file']}:{finding['line']}", file=sys.stderr)
@@ -263,7 +288,10 @@ def print_findings(findings):
     print("How to fix:", file=sys.stderr)
     print("  1. Move secrets to environment variables:", file=sys.stderr)
     print("     • Create/update .env file (ensure it's in .gitignore)", file=sys.stderr)
-    print('     • Use process.env.SECRET_NAME (Node.js) or os.environ.get("SECRET_NAME") (Python)', file=sys.stderr)
+    print(
+        '     • Use process.env.SECRET_NAME (Node.js) or os.environ.get("SECRET_NAME") (Python)',
+        file=sys.stderr,
+    )
     print(file=sys.stderr)
     print("  2. Use a secrets management service:", file=sys.stderr)
     print("     • AWS Secrets Manager, Google Secret Manager, Azure Key Vault", file=sys.stderr)
@@ -300,7 +328,9 @@ def main():
         # Check if commit uses -a flag (auto-stage tracked modified files)
         commit_match = re.search(r"git\s+commit\s+(.+)", command)
         if commit_match and re.search(r"-\w*a", commit_match.group(1)):
-            result = subprocess.run(["git", "diff", "--name-only"], check=False, capture_output=True, text=True)
+            result = subprocess.run(
+                ["git", "diff", "--name-only"], check=False, capture_output=True, text=True
+            )
             for f in result.stdout.strip().split("\n"):
                 if f.strip() and os.path.isfile(f.strip()):
                     staged_files.append(f.strip())
@@ -313,7 +343,10 @@ def main():
                 args = add_match.group(1).strip()
                 if args in (".", "-A", "--all"):
                     result = subprocess.run(
-                        ["git", "status", "--porcelain"], check=False, capture_output=True, text=True
+                        ["git", "status", "--porcelain"],
+                        check=False,
+                        capture_output=True,
+                        text=True,
                     )
                     for line in result.stdout.strip().split("\n"):
                         if line and len(line) > 3:

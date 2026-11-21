@@ -15,11 +15,23 @@
     
     "ask": [
       "Edit(/CLAUDE.md)",
-      "Edit(**/CLAUDE.md)"
+      "Edit(**/CLAUDE.md)",
+      "Edit(.claude/**)", 
+      "Write(.claude/**)"
     ]
   },
   
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/run-checks.py baseline"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
