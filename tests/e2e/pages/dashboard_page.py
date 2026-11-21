@@ -49,6 +49,10 @@ class DashboardPage:
 
     def expand(self, box: str) -> None:
         self.box_toggle("Expand", box).click()
+        # The box slides open; until it settles the dialog's height and scroll keep changing.
+        self.page.wait_for_function(
+            "() => document.getAnimations().every(animation => animation.playState !== 'running')"
+        )
 
     def close_settings(self) -> None:
         self.settings_dialog.get_by_role("button", name="Done").click()
