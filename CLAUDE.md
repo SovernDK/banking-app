@@ -62,7 +62,6 @@ uv run pytest -m e2e                             # end-to-end tests (first: uv r
 
 - **Always load the `ui-design` skill before creating or changing any UI.** It is the source of truth for components, spacing, typography and the colour palette.
 - Use only design tokens / theme variables from the skill — no hard-coded colours, font sizes or spacing values.
-- Every UI must be responsive and meet WCAG 2.1 AA (contrast, keyboard navigation, labels, focus states).
 
 ## Input validation
 

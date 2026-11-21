@@ -1,12 +1,12 @@
 ---
 name: ui-design
-description: "Use when building or changing UI in the finance dashboard frontend: layout, charts, filters, tables, colors, number formatting."
+description: "Use when building or changing UI in the finance dashboard frontend: pages, components, dialogs, forms, buttons, layout, charts, filters, tables, colors, dark mode, styling, accessibility, number formatting."
 ---
 # UI design: finance dashboard (NiceGUI)
 
-Stack: NiceGUI mounted on the FastAPI app (`ui.run_with(app)`), `ui.echart` for charts, `ui.aggrid` for tables, Tailwind via `.classes()`, Quasar via `.props()`. No custom JS, no other UI or chart libraries.
+Stack: NiceGUI mounted on the FastAPI app (`ui.run_with(app)`), `ui.echart` for charts, `ui.aggrid` for data tables, Tailwind via `.classes()`, Quasar via `.props()`. No custom JS, no other UI or chart libraries.
 
-Visual reference: "CRM Dashboard App Design" by Ronas IT (dribbble.com/shots/25742359). Monochrome ink on white, a pale cream band for the overview, flat bordered cards, black and hatched bars.
+Look: monochrome ink on white, a pale cream band for the overview, flat bordered cards, solid ink and hatched bars.
 
 ## Philosophy
 - **Data first.** The numbers are the design. No gradients, no shadows, no icons that don't carry meaning.
@@ -16,71 +16,71 @@ Visual reference: "CRM Dashboard App Design" by Ronas IT (dribbble.com/shots/257
 - **Glanceable, then drillable.** Overview band (filters, KPIs, headline chart) → chart grid → table; filters change all of them together.
 
 ## Components
-Pages are composed only from `app/ui/components/`. Don't style raw `ui.*` elements in page code; if a pattern appears twice, make it a component.
-Built so far: `page_shell`, `overview_band`, `section`, `empty_state`, and `money`/`pct`/`date`. The other rows are the spec for components still to build; create each one in `app/ui/components/` the first time a page needs it.
+- Pages are composed only from `app/ui/components/`. List that folder and reuse what is there before writing anything; don't style raw `ui.*` elements in page code. If a pattern appears twice, make it a component.
+- Numbers and dates render only through `app/ui/format.py` (`money`, `pct`, `date`, `chart_amount` for ECharts values).
+- Charts go through `chart(...)` in `components/chart.py`, which applies theme, palette, fonts and dark mode; use its `hatch_decal` for hatched marks.
+- Not built yet, create in `app/ui/components/` when first needed:
+  - `gauge(value, label)`: ECharts gauge drawn as tick marks (filled ticks = ink, rest = track) for a single ratio such as budget used.
+  - `data_table(rows, columns)`: wraps `ui.aggrid`; money columns right-aligned and formatted.
 
-| Component | Purpose |
-|---|---|
-| `page_shell(title)` | Page background, max width, top bar with title and dark-mode toggle |
-| `overview_band()` | Full-width cream band holding the filter bar, KPI row and headline chart |
-| `filter_bar(filters, on_change)` | Search + ghost buttons (icon + label: Sort, Filters) + primary action; binds to the `Filters` dataclass, syncs URL params, has Reset |
-| `section(title, subtitle=None)` | Flat bordered card with title row and optional actions slot; every widget below the band lives in one |
-| `kpi_tile(label, value, delta=None)` | Big number, two-line muted label below, optional arrow link; delta with sign/arrow and gain/loss color |
-| `chart(option)` | Wraps `ui.echart`; applies theme, palette, fonts, hatch decal, dark mode, empty state |
-| `gauge(value, label)` | ECharts gauge drawn as tick marks (filled ticks = ink, rest = track); for a single ratio such as budget used |
-| `data_table(rows, columns)` | Wraps `ui.aggrid`; money columns right-aligned and formatted |
-| `chip(icon, text)` | Small outlined pill (date, count) |
-| `money(value, currency)`, `pct(value)`, `date(value)` | The only way to render numbers and dates (`app/ui/format.py`) |
-| `empty_state(message)` | Shown instead of an empty chart or table |
-
-Data-bound components are `@ui.refreshable`; a filter change refreshes them all.
+## Updating on screen
+- **Edits never move the page.** After a user edit (select, input, dialog), update the existing elements in place: `echart.options` + `update()`, `select.set_options(...)`, a component's own `update`/`show` method, or clearing only a small container. Never `@ui.refreshable.refresh()` a section for an edit: the section briefly shrinks and the browser clamps the scroll position.
+- Full refreshes are for filter changes at the top of the page only.
+- Cover an edit with an E2E test asserting the scroll position is unchanged.
 
 ## Surfaces and shape
 - **Cards:** card background, 1px border, radius `rounded-xl` (12px), no shadow (`flat bordered`).
-- **Muted card:** `card-muted` background, no border; for secondary or closed items.
+- **Muted card:** `card_muted` background, no border; for secondary or closed items.
 - **Inverse card:** ink background with inverse text; at most one per view, for the selected or most important item.
-- **Buttons:** primary = ink background, inverse text, `rounded-lg`; secondary = ghost (no background, icon + label).
+- **Buttons:** `primary_button` = ink background, inverse text, `rounded-lg`; `ghost_button` = no background, icon + label.
 - **Chips:** 1px border, `rounded-md`, `text-xs`, leading icon.
 - **Form fields:** border uses the muted-text color, not the card border, so it meets 3:1.
-- **Nav / selected item:** `card-muted` pill behind it.
+- **Nav / selected item:** `card_muted` pill behind it.
 
 ## Typography
-- One family: **Inter** (fallback `system-ui, sans-serif`), set globally in `page_shell` and on ECharts `textStyle`. To self-host it, serve the font files with `app.add_static_files`.
+- One family: **Inter** (fallback `system-ui, sans-serif`, `FONT_FAMILY` in `palette.py`), set globally in `page_shell` and on ECharts `textStyle`.
 - All numbers use `tabular-nums` so columns and KPIs align.
 - Large text is light, not bold: KPI value `text-4xl font-normal`; section/column title `text-2xl font-normal`; card title `text-lg font-medium`; body/table `text-sm`; labels, axes, captions `text-xs text-muted`.
 - Weights 400 / 500 only; 600 only for the app name. No all-caps.
 
 ## Colors
-Defined once in `app/ui/palette.py` and exposed as CSS variables by `page_shell`. Values are light / dark. Every text pair meets WCAG AA (4.5:1); chart colors meet 3:1 against card and band.
+The source of truth is `app/ui/palette.py` (`LIGHT` / `DARK` `Palette`); `page_shell` exposes it as `--yiji-*` CSS variables. Never write a hex value outside `palette.py`. Python code reads `Palette` fields; CSS uses the variables or the existing `yiji-*` / `text-muted` classes.
 
-| Role | Light | Dark |
-|---|---|---|
-| Ink (primary button, main bars, gauge fill, inverse card) | `#1F1F1F` | `#F6F7ED` |
-| Inverse text (on ink) | `#F6F7ED` | `#1F1F1F` |
-| Text | `#111111` | `#F2F2F2` |
-| Muted text, axes, form-field borders | `#6B6B6B` | `#A3A3A3` |
-| Band (overview background) | `#F6F7ED` | `#1C1D17` |
-| Page and card | `#FFFFFF` | `#121212` / `#1A1A1A` |
-| Muted card, selected nav | `#F4F4F4` | `#242424` |
-| Card borders, gridlines | `#D3D3D3` | `#3A3A3A` |
-| Secondary bars (hatched), gauge track | `#82827D` / `#C7C8C0` | `#6B6B66` / `#3A3A35` |
-| Gain / income | `#2E7D4F` | `#6FCF97` |
-| Loss / expense | `#C0392B` | `#F28B82` |
-| Warning | `#9A5B00` | `#F2B84B` |
+| Token | Use for |
+|---|---|
+| `ink` | Primary button, current-period bars, gauge fill, inverse card |
+| `inverse_text` | Text on ink |
+| `text` | Body text |
+| `muted` | Secondary text, axes, form-field borders |
+| `band` | Overview band background |
+| `page`, `card` | Page and card backgrounds |
+| `card_muted` | Muted card, selected nav, alerts |
+| `border` | Card borders, gridlines |
+| `secondary_bar`, `gauge_track` | Hatched comparison bars, gauge track |
+| `gain`, `loss` | Income / gain and expense / loss only |
+| `warning` | Warnings (Quasar `--q-warning`) |
+| `categories`, `other_category` | Category colors in fixed order; "Other" is hatched |
 
-Categories, in order (light / dark): ink `#1F1F1F`/`#F6F7ED`, olive `#6B7A3A`/`#A9B87A`, sand `#A07C3F`/`#D9B77A`, slate `#4F7390`/`#8FB0CC`, clay `#A65E4E`/`#D9907F`, plum `#6E5A8C`/`#A994C8`, teal `#3F7F7A`/`#7FBFB8`; "Other" `#8A8A82` hatched.
+- Every text pair meets WCAG AA (4.5:1); chart colors meet 3:1 against card and band. Check any new or changed value in both themes.
 - Green/red mean gain/loss only, never categories; always paired with a sign or arrow.
 - Max 7 categories, rest grouped into "Other"; a category keeps its color everywhere (map by name).
-- Mirror into Quasar with `ui.colors(...)`, and override `--q-primary` etc. under `body.body--dark` so ink inverts in dark mode.
+- `page_shell` maps the palette onto Quasar's `--q-primary` (ink), `--q-positive` (gain), `--q-negative` (loss) and `--q-warning` for both themes, so Quasar `color=` props follow dark mode; use those, not `ui.colors(...)`.
 
 ## Charts
-- **Bars:** current period solid ink; comparison period (previous month, budget) the same bar hatched (ECharts `itemStyle.decal`, diagonal lines in the secondary-bar color). No legend needed when the title says "this vs last month".
+- **Bars:** current period solid ink; comparison period (previous month, budget) the same bar hatched (`hatch_decal`). No legend needed when the title says "this vs last month".
 - **Gauge:** tick-mark arc (`axisTick` only, no pointer, no progress band); value `text-4xl` centred with a muted label below.
 - Axes: muted text, no axis line, light gridlines; rounded bar tops (`borderRadius: [4, 4, 0, 0]`).
 - Tooltips use card background, border and text tokens.
 
 ## Layout
-Top bar → overview band (filter bar, then KPIs and headline chart in one row on desktop, stacked on mobile) → chart grid on white (1 col mobile, 2 desktop) → table. Spacing on one rhythm: `gap-4` between sections, `p-4` inside cards, `p-6` inside the band.
+Top bar → overview band (filters, then KPIs and headline chart in one row on desktop, stacked on mobile) → chart grid on white (1 col mobile, 2 desktop) → table. Spacing on one rhythm: `gap-4` between sections, `p-4` inside cards, `p-6` inside the band.
+
+## Accessibility
+Every UI is responsive and meets WCAG 2.1 AA.
+- Every input and select has a visible label or a `label` prop; icon-only buttons get `aria-label`.
+- Everything is reachable and usable by keyboard; never remove focus outlines.
+- Headings use `role="heading"` with `aria-level` when built from labels.
+- Give elements tests select a `data-testid` (E2E tests select by role, label or test id, never by class).
 
 ## Done check
-Run the app, take Playwright screenshots in light and dark mode, and look at them before finishing.
+Use the `verify` skill to run the app against the fake bank and look at the change in a real browser, in light and dark mode and at phone width, before finishing.
