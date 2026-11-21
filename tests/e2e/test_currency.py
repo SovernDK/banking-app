@@ -183,3 +183,20 @@ def test_totals_in_their_own_currency_carry_no_exchange_rate_note(
 
     expect(dashboard.total).to_have_text("10.00 EUR")
     expect(dashboard.total_note).to_be_visible()
+
+
+def test_chart_tooltips_show_converted_amounts_with_two_decimals(
+    open_dashboard: Callable[..., DashboardPage],
+) -> None:
+    """40 PLN at 3 PLN to the euro is 13.333… EUR, which the charts showed unrounded."""
+    dashboard = open_dashboard(
+        "?currency=EUR",
+        transactions=[debit("40", TODAY, currency="PLN")],
+        rates=daily(TODAY - timedelta(days=10), TODAY, PLN="3"),
+    )
+
+    dashboard.hover_last_bar()
+    expect(dashboard.spending_chart).to_contain_text("13.33 EUR")
+
+    dashboard.hover_donut_ring(dashboard.counterparty_chart)
+    expect(dashboard.counterparty_chart).to_contain_text("13.33 EUR")

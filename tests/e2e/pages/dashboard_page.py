@@ -91,6 +91,17 @@ class DashboardPage:
     def legend_entry(self, legend: Locator, label: str) -> Locator:
         return legend.get_by_role("listitem").filter(has=self.page.get_by_text(label, exact=True))
 
+    def hover_last_bar(self) -> None:
+        box = self.spending_chart.bounding_box()
+        assert box is not None
+        self.spending_chart.hover(position={"x": box["width"] - 24, "y": box["height"] / 2})
+
+    def hover_donut_ring(self, donut: Locator) -> None:
+        """The ring's top, which a single slice always covers."""
+        box = donut.bounding_box()
+        assert box is not None
+        donut.hover(position={"x": box["width"] / 2, "y": box["height"] * 0.15})
+
     def scroll_position(self) -> int:
         return self.page.evaluate("window.scrollY")
 
@@ -156,6 +167,10 @@ class DashboardPage:
     @property
     def spending_chart(self) -> Locator:
         return self.page.get_by_test_id("spending-chart")
+
+    @property
+    def counterparty_chart(self) -> Locator:
+        return self.page.get_by_test_id("counterparty-donut-chart")
 
     @property
     def total(self) -> Locator:

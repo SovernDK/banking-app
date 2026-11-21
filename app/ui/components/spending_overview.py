@@ -48,8 +48,8 @@ def _delta(
     return f"▼ {fmt.pct(ratio)} {compared}", "gain"
 
 
-def _amounts(days: list[DailySpending]) -> list[float]:
-    return [float(entry.amount) for entry in days]
+def _amounts(days: list[DailySpending]) -> list[str]:
+    return [fmt.chart_amount(entry.amount) for entry in days]
 
 
 class SpendingOverview:

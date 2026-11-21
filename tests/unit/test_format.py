@@ -22,6 +22,16 @@ def test_money_shows_two_decimals_grouped_thousands_and_currency(
 
 @pytest.mark.parametrize(
     ("value", "expected"),
+    [(Decimal(40) / Decimal(3), "13.33"), (Decimal("1234.5"), "1234.50"), (Decimal(0), "0.00")],
+)
+def test_chart_amount_rounds_to_two_decimals_without_grouping(
+    value: Decimal, expected: str
+) -> None:
+    assert fmt.chart_amount(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
     [(Decimal("0.125"), "+12.5%"), (Decimal("-0.05"), "-5.0%"), (Decimal("0"), "+0.0%")],
 )
 def test_pct_always_shows_sign(value: Decimal, expected: str) -> None:

@@ -36,7 +36,7 @@ def _slice_data(slices: list[DonutSlice], palette: Palette) -> list[dict[str, An
     return [
         {
             "name": entry.label,
-            "value": float(entry.amount),
+            "value": fmt.chart_amount(entry.amount),
             "itemStyle": {
                 "color": _colour(entry, palette),
                 **({"decal": hatch_decal(palette)} if entry.hatched else {}),
