@@ -18,7 +18,7 @@ uv run python -m app                             # run the app (http://127.0.0.1
 uv run ruff check . && uv run ruff format --check .  # lint + format check
 uv run pyright                                   # type check
 uv run pytest                                    # unit tests
-uv run pytest -m e2e                             # end-to-end tests (first: uv run playwright install chromium)
+uv run pytest -m e2e -n auto                     # end-to-end tests (first: uv run playwright install chromium)
 ```
 ---
 
@@ -40,19 +40,8 @@ uv run pytest -m e2e                             # end-to-end tests (first: uv r
 
 ## Testing
 
-### Unit tests
-- **Always load the `writing-tests` skill before writing or changing unit tests** and follow it.
-- Every new feature or bug fix comes with unit tests; a bug fix starts with a failing test that reproduces it.
-- Unit tests live in `tests/unit`.
-
-### E2E tests
-- Framework: Playwright (pytest-playwright), located in `tests/e2e`.
-- Test **user flows**, not implementation details; one file per feature/flow (`test_<feature>.py`, marked `pytest.mark.e2e`).
-- Select elements by role, label or `data-testid` — never by CSS classes or DOM structure.
-- No fixed sleeps/timeouts; use the framework's auto-waiting and assertions.
-- Each test is independent: sets up and cleans up its own data (via API/fixtures, not via the UI where avoidable).
-- Use Page Objects / helpers in `tests/e2e/pages` for repeated interactions.
-- Cover the happy path plus key failure paths (validation errors, unauthorized access, empty states).
+- **Load the `writing-tests` skill before writing or changing any test, unit or E2E,** and follow it.
+- Every new feature or bug fix comes with tests; a bug fix starts with a failing test that reproduces it.
 
 ## BUG Fixing
 
